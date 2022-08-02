@@ -1,71 +1,57 @@
-use std::ops::Index;
-
 use super::{Expr, Stmt, Type};
-use duplicate::duplicate_item;
-use id_arena::Id;
+
 use paste::paste;
 
 macro_rules! declare_arena {
-    ($t: ident) => {
+    ($t: ident <$a: lifetime>) => {
         paste! {
-            pub type [<$t Id>] = ::id_arena::Id<$t>;
-            pub type [<$t Arena>] = ::id_arena::Arena<$t>;
-            impl ArenaAllocated for $t {
-                type Id = [<$t Id>];
-
-                fn alloc(self, context: &mut AstContext) -> Self::Id {
+            pub type [<$t Arena>]<$a> = ::typed_arena::Arena<$t<$a>>;
+            pub type [<$t Ref>]<$a> = &$a $t<$a>;
+            impl<'a> ArenaAllocated<'a> for $t<'a> {
+                fn alloc(self, context: &'a AstContext<'a>) -> &'a $t<'a> where Self: 'a {
                     context. [<$t:lower s>].alloc(self)
-                }
-
-                fn get(id: Self::Id, context: &AstContext) -> Option<&Self> {
-                    context. [<$t:lower s>].get(id)
                 }
             }
         }
     };
-    ($($t: ident),+) => {
+    ($t: ident) => {
+        paste! {
+            pub type [<$t Arena>] = ::typed_arena::Arena<$t>;
+            pub type [<$t Ref>]<'a> = &'a $t;
+            impl<'a> ArenaAllocated<'a> for $t {
+                fn alloc(self, context: &'a AstContext) -> &'a $t where Self: 'a {
+                    context. [<$t:lower s>].alloc(self)
+                }
+            }
+        }
+    };
+    ($($t: ident $(< $a: lifetime >)?),+) => {
         $(
-            declare_arena!($t);
+            declare_arena!($t $(<$a>)?);
         )+
     };
 }
 
-pub trait ArenaAllocated {
-    type Id;
-
-    fn alloc(self, context: &mut AstContext) -> Self::Id;
-    fn get(id: Self::Id, context: &AstContext) -> Option<&Self>;
+pub trait ArenaAllocated<'a> {
+    fn alloc(self, context: &'a AstContext<'a>) -> &'a Self
+    where
+        Self: 'a;
 }
 
-declare_arena!(Stmt, Expr, Type);
+declare_arena!(Stmt<'a>, Expr<'a>, Type);
 
-pub struct AstContext {
-    stmts: StmtArena,
-    exprs: ExprArena,
+pub struct AstContext<'a> {
+    stmts: StmtArena<'a>,
+    exprs: ExprArena<'a>,
     types: TypeArena,
 }
 
-impl AstContext {
-    pub fn alloc<T>(&mut self, t: T) -> T::Id
+impl<'a> AstContext<'a> {
+    pub fn alloc<T>(&'a self, t: T) -> &'a T
     where
-        T: ArenaAllocated,
+        T: ArenaAllocated<'a>,
     {
-        t.alloc(self)
-    }
-
-    pub fn get<T, I>(&self, id: I) -> Option<&T>
-    where
-        T: ArenaAllocated<Id = I>,
-    {
-        <T as ArenaAllocated>::get(id, self)
-    }
-
-    pub fn get_ref<T, I>(&self, id: &I) -> Option<&T>
-    where
-        T: ArenaAllocated<Id = I>,
-        I: Copy,
-    {
-        <T as ArenaAllocated>::get(*id, self)
+        &*t.alloc(self)
     }
 
     pub fn new() -> Self {
@@ -74,25 +60,5 @@ impl AstContext {
             exprs: ExprArena::new(),
             types: TypeArena::new(),
         }
-    }
-
-    pub(super) fn deep_eq<'a, T>(&'a self, thing: T) -> super::DeepEqual<'a, T> {
-        super::DeepEqual(self, thing)
-    }
-}
-
-#[duplicate_item(
-        Idx       method;
-    [ &Id<T> ]  [ get_ref ];
-    [  Id<T> ]  [ get     ];
-)]
-impl<'a, T> Index<Idx> for AstContext
-where
-    T: ArenaAllocated<Id = Id<T>>,
-{
-    type Output = T;
-
-    fn index(&self, index: Idx) -> &Self::Output {
-        self.method(index).unwrap()
     }
 }

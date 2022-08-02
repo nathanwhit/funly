@@ -14,19 +14,19 @@ macro_rules! parser_todo {
     };
 }
 
-fn _literal(_ctx: &mut AstContext) -> parser!(Literal) {
+fn _literal<'a>(_ctx: &'a AstContext) -> parser!(Literal) {
     let int = text::int(10)
         .map(|s: String| Literal::Int(s.parse().unwrap()))
         .padded();
     int
 }
 
-fn _expr(_ctx: &mut AstContext) -> parser!(Expr) {
+fn _expr<'a>(_ctx: &'a AstContext) -> parser!(Expr<'a>) {
     parser_todo!()
 }
 
 peg::parser! {
-    pub grammar parser(ctx: &mut AstContext) for str {
+    pub grammar parser<'a>(ctx: &'a AstContext<'a>) for str {
         rule number() -> i64
             = n:$(['0'..='9']+) {? n.parse().or(Err("i64"))}
 
@@ -42,34 +42,34 @@ peg::parser! {
         pub rule type_() -> Type
             = "int" { Type::Int }
 
-        pub rule arg() -> Arg
+        pub rule arg() -> Arg<'a>
             = name:ident() _ ":" _ ty:type_() { Arg { name, ty: ctx.alloc(ty) } }
 
-        pub rule expr() -> Expr
+        pub rule expr() -> Expr<'a>
             = id:ident() { Expr::Ident(id) }
                 / lit:literal() { Expr::Literal(lit) }
                 / f:fun() { Expr::Fun(f) }
                 / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
 
-        pub rule fun() -> Fun
+        pub rule fun() -> Fun<'a>
             = "fun" _ "(" _ args:arg() ** "," _ ")" _ "->" _ ret:type_() _ body:expr()
         {
             Fun { args, ret: ctx.alloc(ret), body: ctx.alloc(body) }
         }
 
-        pub rule stmt() -> Stmt
+        pub rule stmt() -> Stmt<'a>
             = _ lhs:expr() _ "=" _ rhs:expr() _ ";" { Stmt::Assign { lhs: ctx.alloc(lhs), rhs: ctx.alloc(rhs) } }
                 / _ e:expr() _ ";" _ { Stmt::Semi(ctx.alloc(e)) }
                 / _ e:expr() _ { Stmt::Expr(ctx.alloc(e)) }
 
-        pub rule program() -> Program
+        pub rule program() -> Program<'a>
             = stmts:stmt() ** _ { Program { stmts: stmts.into_iter().map(|s| ctx.alloc(s)).collect() } }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::ast::{make, DeepEqual};
+    use crate::ast::make;
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -101,13 +101,13 @@ mod test {
             paste::paste! {
                 #[test]
                 fn [<peg_ $name>]() {
-                    let mut $ctx = $crate::ast::AstContext::new();
-                    let actual = parser::$parser($input, &mut $ctx).map_err(|_| ());
+                    let $ctx = $crate::ast::AstContext::new();
+                    let actual = parser::$parser($input, &$ctx).map_err(|_| ());
                     let expected: Result<_, ()> = $output;
                     match (actual, expected) {
                         (Ok(actual), Ok(expected)) => ::pretty_assertions::assert_eq!(
-                            DeepEqual(&$ctx, actual),
-                            DeepEqual(&$ctx, expected),
+                            actual,
+                            expected,
                         ),
                         (Err(_), Err(_)) => {},
                         (a, e) => panic!("expected {a:?}, found {e:?}")
@@ -121,12 +121,12 @@ mod test {
                 #[test]
                 fn [<peg_ $name>]() {
                     let mut $ctx = $crate::ast::AstContext::new();
-                    let actual = parser::$parser($input, &mut $ctx).map_err(|_| ());
+                    let actual = parser::$parser($input, &$ctx).map_err(|_| ());
                     let expected: Result<_, ()> = $output;
                     match (actual, expected) {
                         (Ok(actual), Ok(expected)) => ::pretty_assertions::assert_eq!(
-                            DeepEqual(&$ctx, actual),
-                            DeepEqual(&$ctx, expected),
+                            actual,
+                            expected,
                         ),
                         (Err(_), Err(_)) => {},
                         (a, e) => panic!("expected {a:?}, found {e:?}")
@@ -139,8 +139,8 @@ mod test {
             paste::paste! {
                 #[test]
                 fn [<peg_ $name>]() {
-                    let mut ctx = $crate::ast::AstContext::new();
-                    ::pretty_assertions::assert_eq!(parser::$parser($input, &mut ctx), $output);
+                    let ctx = $crate::ast::AstContext::new();
+                    ::pretty_assertions::assert_eq!(parser::$parser($input, &ctx), $output);
                 }
             }
         };
@@ -181,8 +181,8 @@ mod test {
 
     #[test]
     fn peg_fun() {
-        let mut ctx = AstContext::new();
-        let result = parser::fun("fun() -> int { 1 }", &mut ctx).unwrap();
+        let ctx = AstContext::new();
+        let result = parser::fun("fun() -> int { 1 }", &ctx).unwrap();
         let expected = Fun {
             args: vec![],
             ret: ctx.alloc(Type::Int),
@@ -194,7 +194,7 @@ mod test {
                 ctx.alloc(inner)
             },
         };
-        assert_eq!(DeepEqual(&ctx, result), DeepEqual(&ctx, expected));
+        assert_eq!(result, expected);
     }
 
     peg_parse_test! {
@@ -208,7 +208,7 @@ mod test {
             Fun {
                 args: vec![],
                 ret: ctx.ty(Type::Int),
-                body: ctx.expr_block(|ctx|
+                body: ctx.expr_block(
                     vec![
                         Stmt::Expr(ctx.expr(make::lit(1)))
                     ]
@@ -219,7 +219,7 @@ mod test {
             Fun {
                 args: vec![Arg { name: make::id("a"), ty: ctx.ty(Type::Int) }],
                 ret: ctx.ty(Type::Int),
-                body: ctx.expr_block(|ctx|
+                body: ctx.expr_block(
                     vec![
                         Stmt::Expr(ctx.expr(make::id("a")))
                     ]
@@ -233,7 +233,7 @@ mod test {
         expr   : "1"        => Ok(Stmt::Expr(ctx.expr(make::lit(1)))),
         assign : "foo = 1;"  => Ok(Stmt::Assign { lhs: ctx.expr(make::id("foo")), rhs: ctx.expr(make::lit(1)) }),
 
-        ambig  : "{ 1; 2; 3; 4; };" => Ok(Stmt::Semi(ctx.expr_block(|ctx| {
+        ambig  : "{ 1; 2; 3; 4; };" => Ok(Stmt::Semi(ctx.expr_block( {
             vec![
                 Stmt::Semi(ctx.expr(make::lit(1))),
                 Stmt::Semi(ctx.expr(make::lit(2)))
