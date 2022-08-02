@@ -26,7 +26,7 @@ fn _expr(_ctx: &mut AstContext) -> parser!(Expr) {
 }
 
 peg::parser! {
-    grammar parser(ctx: &mut AstContext) for str {
+    pub grammar parser(ctx: &mut AstContext) for str {
         rule number() -> i64
             = n:$(['0'..='9']+) {? n.parse().or(Err("i64"))}
 
@@ -34,7 +34,7 @@ peg::parser! {
             = l:number() { Literal::Int(l) }
 
         rule _
-            = [' ']*
+            = [' ' | '\t' | '\n']*
 
         pub rule ident() -> Ident
             = id:$(['a'..='z' | 'A'..='Z'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { Ident::new(id) }
@@ -58,12 +58,12 @@ peg::parser! {
         }
 
         pub rule stmt() -> Stmt
-            = lhs:expr() _ "=" _ rhs:expr() { Stmt::Assign { lhs: ctx.alloc(lhs), rhs: ctx.alloc(rhs) } }
-                / e:expr() _ ";" { Stmt::Semi(ctx.alloc(e)) }
-                / e:expr() { Stmt::Expr(ctx.alloc(e)) }
+            = _ lhs:expr() _ "=" _ rhs:expr() _ ";" { Stmt::Assign { lhs: ctx.alloc(lhs), rhs: ctx.alloc(rhs) } }
+                / _ e:expr() _ ";" _ { Stmt::Semi(ctx.alloc(e)) }
+                / _ e:expr() _ { Stmt::Expr(ctx.alloc(e)) }
 
         pub rule program() -> Program
-            = stmts:stmt()* { Program { stmts: stmts.into_iter().map(|s| ctx.alloc(s)).collect() } }
+            = stmts:stmt() ** _ { Program { stmts: stmts.into_iter().map(|s| ctx.alloc(s)).collect() } }
     }
 }
 
@@ -107,7 +107,26 @@ mod test {
                     match (actual, expected) {
                         (Ok(actual), Ok(expected)) => ::pretty_assertions::assert_eq!(
                             DeepEqual(&$ctx, actual),
-                            expected
+                            DeepEqual(&$ctx, expected),
+                        ),
+                        (Err(_), Err(_)) => {},
+                        (a, e) => panic!("expected {a:?}, found {e:?}")
+                    }
+
+                }
+            }
+        };
+        ($name: ident : $parser: ident ($ctx: ident) | $input: expr => $output: expr) => {
+            paste::paste! {
+                #[test]
+                fn [<peg_ $name>]() {
+                    let mut $ctx = $crate::ast::AstContext::new();
+                    let actual = parser::$parser($input, &mut $ctx).map_err(|_| ());
+                    let expected: Result<_, ()> = $output;
+                    match (actual, expected) {
+                        (Ok(actual), Ok(expected)) => ::pretty_assertions::assert_eq!(
+                            DeepEqual(&$ctx, actual),
+                            DeepEqual(&$ctx, expected),
                         ),
                         (Err(_), Err(_)) => {},
                         (a, e) => panic!("expected {a:?}, found {e:?}")
@@ -175,7 +194,7 @@ mod test {
                 ctx.alloc(inner)
             },
         };
-        assert_eq!(DeepEqual(&ctx, result), expected);
+        assert_eq!(DeepEqual(&ctx, result), DeepEqual(&ctx, expected));
     }
 
     peg_parse_test! {
@@ -212,7 +231,14 @@ mod test {
         ---------
         semi   : "1;"       => Ok(Stmt::Semi(ctx.expr(make::lit(1)))),
         expr   : "1"        => Ok(Stmt::Expr(ctx.expr(make::lit(1)))),
-        assign : "foo = 1"  => Ok(Stmt::Assign { lhs: ctx.expr(make::id("foo")), rhs: ctx.expr(make::lit(1)) }),
+        assign : "foo = 1;"  => Ok(Stmt::Assign { lhs: ctx.expr(make::id("foo")), rhs: ctx.expr(make::lit(1)) }),
+
+        ambig  : "{ 1; 2; 3; 4; };" => Ok(Stmt::Semi(ctx.expr_block(|ctx| {
+            vec![
+                Stmt::Semi(ctx.expr(make::lit(1))),
+                Stmt::Semi(ctx.expr(make::lit(2)))
+            ]
+        }))),
     }
 
     parse_test! {

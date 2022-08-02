@@ -75,6 +75,10 @@ impl AstContext {
             types: TypeArena::new(),
         }
     }
+
+    pub(super) fn deep_eq<'a, T>(&'a self, thing: T) -> super::DeepEqual<'a, T> {
+        super::DeepEqual(self, thing)
+    }
 }
 
 #[duplicate_item(
