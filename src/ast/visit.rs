@@ -1,6 +1,6 @@
 use duplicate::duplicate_item;
 
-use super::{Arg, AstContext, Expr, Fun, Ident, Literal, Program, Stmt, Type};
+use super::{Arg, AstContext, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 pub trait Visitor<'ast>: Sized {
     fn visit_stmt(&mut self, ctx: &'ast AstContext, stmt: &'ast Stmt) {
@@ -19,7 +19,7 @@ pub trait Visitor<'ast>: Sized {
         walk_arg(self, ctx, arg)
     }
 
-    fn visit_ident(&mut self, _ctx: &'ast AstContext, _ident: &'ast Ident) {}
+    fn visit_ident(&mut self, _ctx: &'ast AstContext, _ident: &'ast Name) {}
 
     fn visit_type(&mut self, _ctx: &'ast AstContext, _ty: &'ast Type) {}
 

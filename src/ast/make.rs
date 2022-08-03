@@ -1,6 +1,6 @@
 use super::{
     context::{ExprRef, StmtRef, TypeRef},
-    AstContext, Expr, Ident, Literal, Stmt, Type,
+    AstContext, Expr, Literal, Stmt, Type,
 };
 
 pub fn lit(val: impl Into<Literal>) -> Literal {
@@ -13,10 +13,6 @@ pub fn expr<'a>(val: impl Into<Expr<'a>>) -> Expr<'a> {
 
 pub fn alloc_expr<'a>(ctx: &'a AstContext<'a>, val: impl Into<Expr<'a>>) -> ExprRef<'a> {
     ctx.alloc(val.into())
-}
-
-pub fn id(ident: &str) -> Ident {
-    Ident::new(ident)
 }
 
 impl<'a> AstContext<'a> {

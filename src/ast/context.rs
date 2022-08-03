@@ -1,4 +1,6 @@
-use super::{Expr, Stmt, Type};
+use std::sync::atomic::AtomicU64;
+
+use super::{Expr, Name, Stmt, Type};
 
 use paste::paste;
 
@@ -44,7 +46,11 @@ pub struct AstContext<'a> {
     stmts: StmtArena<'a>,
     exprs: ExprArena<'a>,
     types: TypeArena,
+    name_idx: AtomicU64,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NameId(u64);
 
 impl<'a> AstContext<'a> {
     pub fn alloc<T>(&'a self, t: T) -> &'a T
@@ -54,11 +60,22 @@ impl<'a> AstContext<'a> {
         &*t.alloc(self)
     }
 
+    pub fn name(&self, s: &str) -> Name {
+        Name::new(
+            s,
+            NameId(
+                self.name_idx
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            ),
+        )
+    }
+
     pub fn new() -> Self {
         Self {
             stmts: StmtArena::new(),
             exprs: ExprArena::new(),
             types: TypeArena::new(),
+            name_idx: AtomicU64::new(0),
         }
     }
 }

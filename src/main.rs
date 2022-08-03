@@ -10,7 +10,6 @@ fn main() -> color_eyre::Result<()> {
     let input = String::from_utf8(buf)?;
     println!("{input}");
     let mut ctx = AstContext::new();
-    println!("{:?}", &input[12..13]);
     let program = parser::program(&input, &mut ctx)?;
     println!("{program:?}");
     Ok(())

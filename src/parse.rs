@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::ast::{Arg, AstContext, Expr, Fun, Ident, Literal, Program, Stmt, Type};
+use crate::ast::{Arg, AstContext, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 macro_rules! parser {
     ($t: ty) => {
@@ -36,8 +36,8 @@ peg::parser! {
         rule _
             = [' ' | '\t' | '\n']*
 
-        pub rule ident() -> Ident
-            = id:$(['a'..='z' | 'A'..='Z'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { Ident::new(id) }
+        pub rule ident() -> Name
+            = id:$(['a'..='z' | 'A'..='Z'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { ctx.name(id) }
 
         pub rule type_() -> Type
             = "int" { Type::Int }
@@ -63,7 +63,7 @@ peg::parser! {
                 / _ e:expr() _ { Stmt::Expr(ctx.alloc(e)) }
 
         pub rule program() -> Program<'a>
-            = stmts:stmt() ** _ { Program { stmts: stmts.into_iter().map(|s| ctx.alloc(s)).collect() } }
+            = stmts:stmt() ** _ _ { Program { stmts: stmts.into_iter().map(|s| ctx.alloc(s)).collect() } }
     }
 }
 
@@ -217,11 +217,11 @@ mod test {
         ),
         with_args : "fun(a: int) -> int { a }" => Ok(
             Fun {
-                args: vec![Arg { name: make::id("a"), ty: ctx.ty(Type::Int) }],
+                args: vec![Arg { name: ctx.name("a"), ty: ctx.ty(Type::Int) }],
                 ret: ctx.ty(Type::Int),
                 body: ctx.expr_block(
                     vec![
-                        Stmt::Expr(ctx.expr(make::id("a")))
+                        Stmt::Expr(ctx.expr(ctx.name("a")))
                     ]
                 )
             }
@@ -231,12 +231,15 @@ mod test {
         ---------
         semi   : "1;"       => Ok(Stmt::Semi(ctx.expr(make::lit(1)))),
         expr   : "1"        => Ok(Stmt::Expr(ctx.expr(make::lit(1)))),
-        assign : "foo = 1;"  => Ok(Stmt::Assign { lhs: ctx.expr(make::id("foo")), rhs: ctx.expr(make::lit(1)) }),
+        assign : "foo = 1;"  => Ok(Stmt::Assign { lhs: ctx.expr(ctx.name("foo")), rhs: ctx.expr(make::lit(1)) }),
 
-        ambig  : "{ 1; 2; 3; 4; };" => Ok(Stmt::Semi(ctx.expr_block( {
+        block  : "{ 1; 2; 3; 4; 5};" => Ok(Stmt::Semi(ctx.expr_block( {
             vec![
                 Stmt::Semi(ctx.expr(make::lit(1))),
-                Stmt::Semi(ctx.expr(make::lit(2)))
+                Stmt::Semi(ctx.expr(make::lit(2))),
+                Stmt::Semi(ctx.expr(make::lit(3))),
+                Stmt::Semi(ctx.expr(make::lit(4))),
+                Stmt::Expr(ctx.expr(make::lit(5))),
             ]
         }))),
     }
@@ -244,6 +247,5 @@ mod test {
     parse_test! {
         literal_works : _literal | "50" => Ok(Literal::Int(50)),
         literal_bad   : _literal | "j"  => Err(()),
-
     }
 }

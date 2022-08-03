@@ -5,19 +5,34 @@ pub mod visit;
 pub use context::{ArenaAllocated, AstContext};
 use derive_more::From;
 
-use self::context::{ExprRef, StmtRef, TypeRef};
+use self::context::{ExprRef, NameId, StmtRef, TypeRef};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Program<'a> {
     pub stmts: Vec<StmtRef<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
+#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
+pub struct Name {
+    text: Ident,
+    id: NameId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ident(String);
 
-impl Ident {
-    pub fn new(s: &str) -> Self {
-        Self(s.into())
+impl PartialEq for Name {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
+impl Name {
+    pub fn new(s: &str, id: NameId) -> Self {
+        Self {
+            text: Ident(s.into()),
+            id,
+        }
     }
 }
 
@@ -33,7 +48,7 @@ pub enum Expr<'a> {
     Block(Vec<StmtRef<'a>>),
     Fun(Fun<'a>),
     Literal(Literal),
-    Ident(Ident),
+    Ident(Name),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
@@ -50,7 +65,7 @@ pub struct Fun<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Arg<'a> {
-    pub name: Ident,
+    pub name: Name,
     pub ty: TypeRef<'a>,
 }
 
