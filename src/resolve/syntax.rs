@@ -1,136 +1,178 @@
 use std::{
     collections::{BTreeSet, HashMap},
-    ops::Deref,
+    marker::PhantomData,
 };
 
-use by_address::ByAddress;
-use duplicate::duplicate_item;
-
-use crate::ast::context::{ExprRef, StmtRef, TypeRef};
+use crate::ast::{
+    context::NameId,
+    visit::{Visit, Visitor},
+    Ident, Name,
+};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Scope(u64);
 
 impl Scope {
-    pub(super) fn new(idx: u64) -> Scope {
+    fn new(idx: u64) -> Scope {
         Scope(idx)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
-pub struct ScopeSet {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Syntax {
+    ident: Ident,
     scopes: BTreeSet<Scope>,
 }
 
-pub type ScopeSetMap<T> = HashMap<ByAddress<T>, ScopeSet>;
-
-#[derive(Default, Debug)]
-pub struct ScopeSets<'ast> {
-    exprs: ScopeSetMap<ExprRef<'ast>>,
-    stmts: ScopeSetMap<StmtRef<'ast>>,
-    types: ScopeSetMap<TypeRef<'ast>>,
-}
-
-impl<'ast> ScopeSets<'ast> {
-    fn syntax_change<F, R, T>(&'ast mut self, item: &T, action: F) -> R
-    where
-        F: FnOnce(&'ast mut ScopeSetMap<T>) -> R,
-        T: HasSyntax<'ast> + Deref + 'ast,
-    {
-        item.syntax_change(self, action)
+impl Syntax {
+    fn new(ident: Ident) -> Self {
+        Self {
+            ident,
+            scopes: BTreeSet::new(),
+        }
+    }
+    pub fn ident(&self) -> &Ident {
+        &self.ident
+    }
+    pub fn is_subset(&self, other: &Syntax) -> bool {
+        self.scopes.is_subset(&other.scopes)
+    }
+    pub fn num_scopes(&self) -> usize {
+        self.scopes.len()
+    }
+    #[cfg(test)]
+    fn contains(&self, scope: &Scope) -> bool {
+        self.scopes.contains(&scope)
     }
 }
 
 #[derive(Default, Debug)]
-pub struct SyntaxSets<'ast> {
-    scopes: ScopeSets<'ast>,
+pub struct SyntaxSets {
+    scope_sets: HashMap<NameId, Syntax>,
     scope_idx: u64,
 }
 
-impl<'ast> SyntaxSets<'ast> {
+struct SyntaxChanger<'ast, F>
+where
+    F: FnMut(&'ast Name) + 'ast,
+{
+    action: F,
+    phantom: PhantomData<&'ast ()>,
+}
+
+impl<'ast, F> SyntaxChanger<'ast, F>
+where
+    F: FnMut(&'ast Name) + 'ast,
+{
+    fn new(action: F) -> Self {
+        Self {
+            action,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'ast, F> Visitor<'ast> for SyntaxChanger<'ast, F>
+where
+    F: FnMut(&'ast Name) + 'ast,
+{
+    fn visit_ident(&mut self, name: &'ast crate::ast::Name) {
+        println!("visiting {name:?}");
+        (self.action)(name)
+    }
+}
+
+impl SyntaxSets {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn new_scope(&mut self) -> Scope {
         self.scope_idx += 1;
         Scope::new(self.scope_idx)
     }
 
-    pub fn add_scope<T: HasSyntax<'ast> + Deref + Copy + 'ast>(
-        &'ast mut self,
-        scope: Scope,
-        to: T,
-    ) {
-        self.scopes.syntax_change(&to, |map| {
-            map.entry(ByAddress(to)).or_default().scopes.insert(scope)
+    pub fn print_scopes(&self) {
+        println!("{:?}", self.scope_sets);
+    }
+
+    pub fn add_scope<'me, 'ast, T: Visit<'ast> + 'ast>(&'me mut self, scope: Scope, to: &'me T)
+    where
+        'me: 'ast,
+    {
+        println!("doin it");
+        let mut changer = SyntaxChanger::new(move |name| {
+            let scope = scope.clone();
+            self.add_scope_to_name(scope, name)
         });
+        to.visit(&mut changer);
     }
 
-    pub fn remove_scope<T: HasSyntax<'ast> + Deref + Copy + 'ast>(
-        &'ast mut self,
-        scope: Scope,
-        from: T,
-    ) {
-        self.scopes.syntax_change(&from, |map| {
-            map.entry(ByAddress(from))
-                .or_default()
-                .scopes
-                .remove(&scope);
-        })
-    }
-
-    pub fn flip_scope<T: HasSyntax<'ast> + Deref + Copy + 'ast>(
-        &'ast mut self,
-        scope: Scope,
-        on: T,
-    ) {
-        self.scopes.syntax_change(&on, |map| {
-            let scopes = &mut map.entry(ByAddress(on)).or_default().scopes;
-            if scopes.contains(&scope) {
-                scopes.remove(&scope);
-            } else {
-                scopes.insert(scope);
-            }
-        })
-    }
-}
-
-pub trait HasSyntax<'ast>: Sized {
-    fn syntax_do<F, R>(&self, sets: &'ast mut ScopeSets<'ast>, action: F) -> R
+    pub fn flip_scope<'me, 'ast, T: Visit<'ast> + 'ast>(&'me mut self, scope: Scope, on: &'me T)
     where
-        F: FnOnce(&'ast ScopeSetMap<Self>) -> R,
-        Self: Deref + 'ast;
-
-    fn syntax_change<F, R>(&self, sets: &'ast mut ScopeSets<'ast>, action: F) -> R
-    where
-        F: FnOnce(&'ast mut ScopeSetMap<Self>) -> R,
-        Self: Deref + 'ast;
-}
-
-#[duplicate_item(
-        Ty       field;
-    [ExprRef]   [exprs];
-    [StmtRef]   [stmts];
-    [TypeRef]   [types];
-)]
-impl<'ast> HasSyntax<'ast> for Ty<'ast> {
-    fn syntax_do<F, R>(&self, sets: &'ast mut ScopeSets<'ast>, action: F) -> R
-    where
-        F: FnOnce(&'ast ScopeSetMap<Self>) -> R,
-        Self: Deref + 'ast,
+        'me: 'ast,
     {
-        action(&sets.field)
+        let mut changer = SyntaxChanger::new(move |name| self.flip_scope_for_name(scope, name));
+        on.visit(&mut changer);
     }
-    fn syntax_change<F, R>(&self, sets: &'ast mut ScopeSets<'ast>, action: F) -> R
-    where
-        F: FnOnce(&'ast mut ScopeSetMap<Self>) -> R,
-        Self: Deref + 'ast,
-    {
-        action(&mut sets.field)
+
+    fn add_scope_to_name(&mut self, scope: Scope, name: &Name) {
+        self.scope_sets
+            .entry(name.id())
+            .or_insert_with(|| Syntax::new(name.ident().clone()))
+            .scopes
+            .insert(scope);
+    }
+
+    fn flip_scope_for_name(&mut self, scope: Scope, name: &Name) {
+        let scopes = &mut self
+            .scope_sets
+            .entry(name.id())
+            .or_insert_with(|| Syntax::new(name.ident().clone()))
+            .scopes;
+        if scopes.contains(&scope) {
+            scopes.remove(&scope);
+        } else {
+            scopes.insert(scope);
+        }
+    }
+
+    pub fn get_scopes(&self, name: &Name) -> Option<&Syntax> {
+        self.scope_sets.get(&name.id())
     }
 }
 
-fn fooby() {
-    let mut syntaxes = SyntaxSets::default();
-    let ast = crate::ast::AstContext::new();
-    let expr = ast.expr(crate::ast::make::lit(1));
-    let scope = syntaxes.new_scope();
-    syntaxes.add_scope(scope, expr);
+#[cfg(test)]
+mod test {
+    use crate::ast::AstContext;
+
+    use super::SyntaxSets;
+
+    fn setup<'a>() -> (AstContext<'a>, SyntaxSets) {
+        (AstContext::new(), SyntaxSets::new())
+    }
+
+    #[test]
+    fn add_scope_works() {
+        let (ctx, mut sets) = setup();
+        let foo = ctx.name("foo");
+        let expr = ctx.expr(foo.clone());
+        let s = sets.new_scope();
+
+        sets.add_scope(s, expr);
+        assert!(sets.get_scopes(&foo).unwrap().contains(&s));
+    }
+
+    #[test]
+    fn flip_scope_works() {
+        let (ctx, mut sets) = setup();
+        let foo = ctx.name("foo");
+        let expr = ctx.expr(foo.clone());
+        let s = sets.new_scope();
+
+        sets.flip_scope(s, expr);
+        assert!(sets.get_scopes(&foo).unwrap().contains(&s));
+
+        sets.flip_scope(s, expr);
+        assert!(!sets.get_scopes(&foo).unwrap().contains(&s));
+    }
 }

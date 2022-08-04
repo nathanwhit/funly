@@ -1,87 +1,85 @@
 use duplicate::duplicate_item;
 
-use super::{Arg, AstContext, Expr, Fun, Literal, Name, Program, Stmt, Type};
+use super::{Arg, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 pub trait Visitor<'ast>: Sized {
-    fn visit_stmt(&mut self, ctx: &'ast AstContext, stmt: &'ast Stmt) {
-        walk_stmt(self, ctx, stmt)
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        walk_stmt(self, stmt)
     }
 
-    fn visit_expr(&mut self, ctx: &'ast AstContext, expr: &'ast Expr) {
-        walk_expr(self, ctx, expr)
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        walk_expr(self, expr)
     }
 
-    fn visit_fun(&mut self, ctx: &'ast AstContext, fun: &'ast Fun) {
-        walk_fun(self, ctx, fun)
+    fn visit_fun(&mut self, fun: &'ast Fun) {
+        walk_fun(self, fun)
     }
 
-    fn visit_arg(&mut self, ctx: &'ast AstContext, arg: &'ast Arg) {
-        walk_arg(self, ctx, arg)
+    fn visit_arg(&mut self, arg: &'ast Arg) {
+        walk_arg(self, arg)
     }
 
-    fn visit_ident(&mut self, _ctx: &'ast AstContext, _ident: &'ast Name) {}
+    fn visit_ident(&mut self, _ident: &'ast Name) {}
 
-    fn visit_type(&mut self, _ctx: &'ast AstContext, _ty: &'ast Type) {}
+    fn visit_type(&mut self, _ty: &'ast Type) {}
 
-    fn visit_literal(&mut self, _ctx: &'ast AstContext, _lit: &'ast Literal) {}
+    fn visit_literal(&mut self, _lit: &'ast Literal) {}
 
-    fn visit_program(&mut self, ctx: &'ast AstContext, program: &'ast Program) {
-        walk_program(self, ctx, program)
+    fn visit_program(&mut self, program: &'ast Program) {
+        walk_program(self, program)
     }
 }
 
 macro_rules! walk_list {
-    ($visitor: expr, $ctx: ident, $method: ident, $list: expr) => {
+    ($visitor: expr, $method: ident, $list: expr) => {
         for elem in $list {
-            $visitor.$method($ctx, elem)
+            $visitor.$method(elem)
         }
     };
 }
 
-pub fn walk_stmt<'a, V: Visitor<'a>>(visitor: &mut V, ctx: &'a AstContext, stmt: &'a Stmt) {
+pub fn walk_stmt<'a, V: Visitor<'a>>(visitor: &mut V, stmt: &'a Stmt) {
     match stmt {
         Stmt::Assign { lhs, rhs } => {
-            visitor.visit_expr(ctx, lhs);
-            visitor.visit_expr(ctx, rhs);
+            visitor.visit_expr(lhs);
+            visitor.visit_expr(rhs);
         }
-        Stmt::Expr(expr) | Stmt::Semi(expr) => visitor.visit_expr(ctx, expr),
+        Stmt::Expr(expr) | Stmt::Semi(expr) => visitor.visit_expr(expr),
     }
 }
 
-pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, ctx: &'a AstContext, expr: &'a Expr) {
+pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
     match expr {
         Expr::Block(stmts) => {
-            walk_list!(visitor, ctx, visit_stmt, stmts);
+            walk_list!(visitor, visit_stmt, stmts);
         }
-        Expr::Fun(fun) => visitor.visit_fun(ctx, fun),
-        Expr::Literal(lit) => visitor.visit_literal(ctx, lit),
-        Expr::Ident(ident) => visitor.visit_ident(ctx, ident),
+        Expr::Fun(fun) => visitor.visit_fun(fun),
+        Expr::Literal(lit) => visitor.visit_literal(lit),
+        Expr::Ident(ident) => visitor.visit_ident(ident),
     }
 }
 
-pub fn walk_fun<'a, V: Visitor<'a>>(visitor: &mut V, ctx: &'a AstContext, fun: &'a Fun) {
+pub fn walk_fun<'a, V: Visitor<'a>>(visitor: &mut V, fun: &'a Fun) {
     let Fun { args, ret, body } = fun;
-    walk_list!(visitor, ctx, visit_arg, args);
-    visitor.visit_type(ctx, ret);
-    visitor.visit_expr(ctx, body);
+    walk_list!(visitor, visit_arg, args);
+    visitor.visit_type(ret);
+    visitor.visit_expr(body);
 }
 
-pub fn walk_arg<'a, V: Visitor<'a>>(visitor: &mut V, ctx: &'a AstContext, arg: &'a Arg) {
+pub fn walk_arg<'a, V: Visitor<'a>>(visitor: &mut V, arg: &'a Arg) {
     let Arg { name, ty } = arg;
-    visitor.visit_ident(ctx, name);
-    visitor.visit_type(ctx, ty);
+    visitor.visit_ident(name);
+    visitor.visit_type(ty);
 }
 
-pub fn walk_program<'a, V: Visitor<'a>>(
-    visitor: &mut V,
-    ctx: &'a AstContext,
-    program: &'a Program,
-) {
-    walk_list!(visitor, ctx, visit_stmt, &program.stmts);
+pub fn walk_program<'a, V: Visitor<'a>>(visitor: &mut V, program: &'a Program<'a>) {
+    walk_list!(visitor, visit_stmt, &program.stmts);
 }
+
+pub fn walk_type<'a, V: Visitor<'a>>(_visitor: &mut V, _ty: &'a Type) {}
 
 pub trait Visit<'ast> {
-    fn visit<V: Visitor<'ast>>(&'ast self, visitor: &'ast mut V, ctx: &'ast AstContext<'ast>);
+    fn visit<V: Visitor<'ast>>(&'ast self, visitor: &mut V);
 }
 
 #[duplicate_item(
@@ -94,7 +92,13 @@ pub trait Visit<'ast> {
 
 )]
 impl<'ast> Visit<'ast> for Ty<'ast> {
-    fn visit<V: Visitor<'ast>>(&'ast self, visitor: &'ast mut V, ctx: &'ast AstContext<'ast>) {
-        visitor.method(ctx, self);
+    fn visit<V: Visitor<'ast>>(&'ast self, visitor: &mut V) {
+        visitor.method(self);
+    }
+}
+
+impl<'ast> Visit<'ast> for Name {
+    fn visit<V: Visitor<'ast>>(&'ast self, visitor: &mut V) {
+        visitor.visit_ident(self);
     }
 }

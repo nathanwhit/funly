@@ -18,7 +18,17 @@ pub struct Name {
     id: NameId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+impl Name {
+    pub fn ident(&self) -> &Ident {
+        &self.text
+    }
+
+    pub fn id(&self) -> NameId {
+        self.id
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct Ident(String);
 
 impl PartialEq for Name {
@@ -73,3 +83,6 @@ pub struct Arg<'a> {
 pub enum Type {
     Int,
 }
+
+#[cfg(test)]
+mod test_impls {}

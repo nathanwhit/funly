@@ -42,6 +42,7 @@ pub trait ArenaAllocated<'a> {
 
 declare_arena!(Stmt<'a>, Expr<'a>, Type);
 
+#[derive(Default)]
 pub struct AstContext<'a> {
     stmts: StmtArena<'a>,
     exprs: ExprArena<'a>,
@@ -49,7 +50,7 @@ pub struct AstContext<'a> {
     name_idx: AtomicU64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NameId(u64);
 
 impl<'a> AstContext<'a> {
@@ -71,11 +72,6 @@ impl<'a> AstContext<'a> {
     }
 
     pub fn new() -> Self {
-        Self {
-            stmts: StmtArena::new(),
-            exprs: ExprArena::new(),
-            types: TypeArena::new(),
-            name_idx: AtomicU64::new(0),
-        }
+        Self::default()
     }
 }
