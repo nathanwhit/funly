@@ -83,9 +83,6 @@ where
 }
 
 impl SyntaxSets {
-    pub fn new() -> Self {
-        Self::default()
-    }
     pub fn new_scope(&mut self) -> Scope {
         self.scope_idx += 1;
         Scope::new(self.scope_idx)
@@ -107,12 +104,33 @@ impl SyntaxSets {
         to.visit(&mut changer);
     }
 
+    pub fn add_scopes<'me, 'ast, T, S>(&'me mut self, scopes: S, to: &'me T)
+    where
+        T: Visit<'ast> + 'ast,
+        'me: 'ast,
+        S: IntoIterator<Item = &'me Scope> + Clone + 'me,
+    {
+        let mut changer = SyntaxChanger::new(move |name| {
+            self.add_scopes_to_name(scopes.clone().into_iter().copied(), name)
+        });
+        to.visit(&mut changer);
+    }
+
+    #[allow(dead_code)]
     pub fn flip_scope<'me, 'ast, T: Visit<'ast> + 'ast>(&'me mut self, scope: Scope, on: &'me T)
     where
         'me: 'ast,
     {
         let mut changer = SyntaxChanger::new(move |name| self.flip_scope_for_name(scope, name));
         on.visit(&mut changer);
+    }
+
+    fn add_scopes_to_name(&mut self, scopes: impl IntoIterator<Item = Scope>, name: &Name) {
+        self.scope_sets
+            .entry(name.id())
+            .or_insert_with(|| Syntax::new(name.ident().clone()))
+            .scopes
+            .extend(scopes);
     }
 
     fn add_scope_to_name(&mut self, scope: Scope, name: &Name) {
@@ -123,6 +141,7 @@ impl SyntaxSets {
             .insert(scope);
     }
 
+    #[allow(dead_code)]
     fn flip_scope_for_name(&mut self, scope: Scope, name: &Name) {
         let scopes = &mut self
             .scope_sets
@@ -148,7 +167,7 @@ mod test {
     use super::SyntaxSets;
 
     fn setup<'a>() -> (AstContext<'a>, SyntaxSets) {
-        (AstContext::new(), SyntaxSets::new())
+        (AstContext::default(), SyntaxSets::default())
     }
 
     #[test]

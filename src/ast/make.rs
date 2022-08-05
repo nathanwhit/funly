@@ -38,4 +38,23 @@ impl<'a> AstContext<'a> {
         let e = self.expr(val);
         self.alloc(Stmt::Semi(e))
     }
+
+    pub fn assign(&'a self, lhs: impl Into<Expr<'a>>, rhs: impl Into<Expr<'a>>) -> StmtRef<'a> {
+        self.alloc(Stmt::Assign {
+            lhs: self.expr(lhs),
+            rhs: self.expr(rhs),
+        })
+    }
+}
+
+#[cfg(test)]
+#[duplicate::duplicate_item(
+    Ty      Ref;
+    [Expr]  [ExprRef];
+    [Stmt]  [StmtRef];
+)]
+impl<'a> From<Ref<'a>> for Ty<'a> {
+    fn from(value: Ref<'a>) -> Self {
+        value.clone()
+    }
 }

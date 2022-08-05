@@ -1,9 +1,13 @@
+//! Name resolution
+//!
+//! We use the [Binding as Sets of Scopes](https://www.cs.utah.edu/plt/scope-sets/) model
+//! for its simplicity and to set us up well for macro support in the future.
 use std::{collections::HashMap, ops::Not};
 use thiserror::Error;
 
 use crate::ast::{
     visit::{self, Visit, Visitor},
-    Expr, Ident, Name, Program,
+    Expr, Ident, Name,
 };
 
 use self::syntax::{Syntax, SyntaxSets};
@@ -20,27 +24,33 @@ pub struct Resolver {
 }
 
 impl<'ast> Visitor<'ast> for Resolver {
-    fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
-        match stmt {
-            crate::ast::Stmt::Assign { lhs, rhs } => {
-                if let Expr::Ident(name) = lhs {
-                    let scope = self.scope_sets.new_scope();
-                    self.scope_sets.add_scope(scope, name);
-                    self.scope_sets.add_scope(scope, *rhs);
-                    self.add_binding(name);
-                } else {
-                    visit::walk_expr(self, lhs);
-                    visit::walk_expr(self, rhs);
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        match expr {
+            Expr::Block(stmts) => {
+                let mut pending_scopes = Vec::new();
+                for &stmt in stmts {
+                    self.scope_sets.add_scopes(&pending_scopes, stmt);
+                    match stmt {
+                        crate::ast::Stmt::Assign {
+                            lhs: Expr::Ident(name),
+                            rhs,
+                        } => {
+                            let scope = self.scope_sets.new_scope();
+                            self.scope_sets.add_scope(scope, name);
+                            self.scope_sets.add_scope(scope, *rhs);
+                            self.add_binding(name);
+                            pending_scopes.push(scope);
+                        }
+                        s => visit::walk_stmt(self, s),
+                    }
                 }
             }
-            s => visit::walk_stmt(self, s),
+            expr => visit::walk_expr(self, expr),
         }
     }
 
     fn visit_fun(&mut self, fun: &'ast crate::ast::Fun) {
-        println!("HERE");
         for arg in &fun.args {
-            println!("yarrr matey {arg:?}");
             let scope = self.scope_sets.new_scope();
             self.scope_sets.add_scope(scope, arg);
             self.scope_sets.add_scope(scope, fun.body);
@@ -76,10 +86,7 @@ impl Resolver {
             .table
             .bindings
             .keys()
-            .filter(|cand| {
-                println!("candidate");
-                (cand.ident() == syntax.ident()) && cand.is_subset(&syntax)
-            })
+            .filter(|cand| (cand.ident() == syntax.ident()) && cand.is_subset(&syntax))
             .collect();
 
         let best = if let Some(&best) = candidates.iter().max_by_key(|syn| syn.num_scopes()) {
@@ -116,7 +123,6 @@ impl BindingTable {
         let binding = Binding(self.binding_idx);
         self.binding_idx += 1;
         self.bindings.insert(scopes, binding);
-        println!("bindings {:?}", self.bindings);
         binding
     }
 }
@@ -136,7 +142,7 @@ pub enum ResolutionError {
 #[cfg(test)]
 mod test {
     use crate::{
-        ast::{Arg, AstContext, Fun, Type},
+        ast::{make, Arg, AstContext, Fun, Type},
         resolve::Binding,
     };
 
@@ -163,8 +169,60 @@ mod test {
         assert_eq!(binding, resolver.resolve(&arg_foo).unwrap());
     }
 
-    // #[test]
-    // fn block_resolution() {
-    //     let ctx = AstContext::new();
-    // }
+    #[test]
+    fn block_resolution() {
+        let ctx = AstContext::new();
+        let assign_foo = ctx.name("foo");
+        let block_foo = ctx.name("foo");
+        let nested_block_foo = ctx.name("foo");
+
+        let block = ctx.expr(vec![
+            ctx.assign(assign_foo.clone(), make::lit(1)),
+            ctx.assign(ctx.name("bar"), block_foo.clone()),
+            ctx.semi_stmt(vec![ctx.expr_stmt(nested_block_foo.clone())]),
+        ]);
+
+        let resolver = Resolver::new(block);
+
+        let binding = resolver.resolve(&assign_foo).unwrap();
+        let block_binding = resolver.resolve(&block_foo).unwrap();
+        let nested_block_binding = resolver.resolve(&nested_block_foo).unwrap();
+
+        assert_eq!(binding, Binding(0));
+        assert_eq!(binding, block_binding);
+        assert_eq!(binding, nested_block_binding);
+    }
+
+    #[test]
+    fn shadowing() {
+        let ctx = AstContext::new();
+        let assign_foo = ctx.name("foo");
+        let block_foo = ctx.name("foo");
+        let fun_foo = ctx.name("foo");
+        let body_foo = ctx.name("foo");
+
+        let block = ctx.expr(vec![
+            ctx.assign(assign_foo.clone(), make::lit(1)),
+            ctx.semi_stmt(block_foo.clone()),
+            ctx.expr_stmt(Fun {
+                args: vec![Arg {
+                    name: fun_foo.clone(),
+                    ty: ctx.ty(Type::Int),
+                }],
+                ret: ctx.ty(Type::Int),
+                body: ctx.expr(body_foo.clone()),
+            }),
+        ]);
+
+        let resolver = Resolver::new(block);
+
+        let binding = resolver.resolve(&assign_foo).unwrap();
+        let block_binding = resolver.resolve(&block_foo).unwrap();
+        let fun_binding = resolver.resolve(&fun_foo).unwrap();
+        let body_binding = resolver.resolve(&body_foo).unwrap();
+
+        assert_eq!(binding, block_binding);
+        assert_eq!(fun_binding, body_binding);
+        assert_ne!(binding, fun_binding);
+    }
 }
