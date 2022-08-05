@@ -39,8 +39,10 @@ peg::parser! {
         pub rule ident() -> Name
             = id:$(['a'..='z' | 'A'..='Z'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { ctx.name(id) }
 
-        pub rule type_() -> Type
+        pub rule type_() -> Type<'a>
             = "int" { Type::Int }
+                / "fun" _ "(" _ args:type_() ** ("," _) ")" _ "->" _ ret:type_()
+                    { Type::Fun { args: args.into_iter().map(|t| ctx.alloc(t)).collect(), ret: ctx.alloc(ret) } }
 
         pub rule arg() -> Arg<'a>
             = name:ident() _ ":" _ ty:type_() { Arg { name, ty: ctx.alloc(ty) } }
@@ -52,7 +54,7 @@ peg::parser! {
                 / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
 
         pub rule fun() -> Fun<'a>
-            = "fun" _ "(" _ args:arg() ** "," _ ")" _ "->" _ ret:type_() _ body:expr()
+            = "fun" _ "(" _ args:arg() ** ("," _) ")" _ "->" _ ret:type_() _ body:expr()
         {
             Fun { args, ret: ctx.alloc(ret), body: ctx.alloc(body) }
         }
@@ -73,6 +75,7 @@ mod test {
 
     use super::*;
     use pretty_assertions::assert_eq;
+    use Type::Int;
 
     macro_rules! parse_test {
         ($name: ident : $parser: ident | $input: expr => $output: expr) => {
@@ -100,9 +103,10 @@ mod test {
         ($name: ident : $parser: ident ($ctx: ident) | $input: expr => $output: expr) => {
             paste::paste! {
                 #[test]
+                #[allow(non_snake_case)]
                 fn [<peg_ $name>]() {
                     let $ctx = $crate::ast::AstContext::new();
-                    let actual = parser::$parser($input, &$ctx).map_err(|_| ());
+                    let actual = parser::$parser($input, &$ctx).map_err(|e| eprintln!("{e}"));
                     let expected: Result<_, ()> = $output;
                     match (actual, expected) {
                         (Ok(actual), Ok(expected)) => ::pretty_assertions::assert_eq!(
@@ -110,7 +114,7 @@ mod test {
                             expected,
                         ),
                         (Err(_), Err(_)) => {},
-                        (a, e) => panic!("expected {a:?}, found {e:?}")
+                        (a, e) => panic!("expected {e:#?}, found {a:#?}")
                     }
 
                 }
@@ -215,9 +219,9 @@ mod test {
                 )
             }
         ),
-        with_args : "fun(a: int) -> int { a }" => Ok(
+        with_args : "fun(a: int, b: int) -> int { a }" => Ok(
             Fun {
-                args: vec![Arg { name: ctx.name("a"), ty: ctx.ty(Type::Int) }],
+                args: vec![ctx.arg("a", Int), ctx.arg("b", Int)],
                 ret: ctx.ty(Type::Int),
                 body: ctx.expr_block(
                     vec![
@@ -241,7 +245,25 @@ mod test {
                 Stmt::Semi(ctx.expr(make::lit(4))),
                 Stmt::Expr(ctx.expr(make::lit(5))),
             ]
-        }))),
+        })));
+
+        type_(ctx)
+        ----------
+        int     : "int" => Ok(Type::Int),
+        fun     : "fun (int, int) -> int" => Ok(Type::Fun { args: vec![ctx.ty(Int), ctx.ty(Int)], ret: ctx.ty(Int)}),
+        fun_fun : "fun (fun (int) -> int, int) -> fun (int) -> int" => Ok(Type::Fun {
+            args: vec![
+                ctx.ty(Type::Fun {
+                    args: vec![ctx.ty(Int)],
+                    ret: ctx.ty(Int),
+                }),
+                ctx.ty(Int),
+            ],
+            ret: ctx.ty(Type::Fun {
+                args: vec![ctx.ty(Int)],
+                ret: ctx.ty(Int),
+            }),
+        }),
     }
 
     parse_test! {

@@ -40,13 +40,13 @@ pub trait ArenaAllocated<'a> {
         Self: 'a;
 }
 
-declare_arena!(Stmt<'a>, Expr<'a>, Type);
+declare_arena!(Stmt<'a>, Expr<'a>, Type<'a>);
 
 #[derive(Default)]
 pub struct AstContext<'a> {
     stmts: StmtArena<'a>,
     exprs: ExprArena<'a>,
-    types: TypeArena,
+    types: TypeArena<'a>,
     name_idx: AtomicU64,
 }
 

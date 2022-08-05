@@ -80,8 +80,12 @@ pub struct Arg<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Type {
+pub enum Type<'a> {
     Int,
+    Fun {
+        args: Vec<TypeRef<'a>>,
+        ret: TypeRef<'a>,
+    },
 }
 
 #[cfg(test)]

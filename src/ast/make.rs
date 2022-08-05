@@ -1,6 +1,6 @@
 use super::{
     context::{ExprRef, StmtRef, TypeRef},
-    AstContext, Expr, Literal, Stmt, Type,
+    Arg, AstContext, Expr, Literal, Stmt, Type,
 };
 
 pub fn lit(val: impl Into<Literal>) -> Literal {
@@ -25,8 +25,15 @@ impl<'a> AstContext<'a> {
         self.alloc(Expr::Block(stmts))
     }
 
-    pub fn ty(&'a self, ty: impl Into<Type>) -> TypeRef<'a> {
+    pub fn ty(&'a self, ty: impl Into<Type<'a>>) -> TypeRef<'a> {
         self.alloc(ty.into())
+    }
+
+    pub fn arg(&'a self, name: impl AsRef<str>, ty: impl Into<Type<'a>>) -> Arg {
+        Arg {
+            name: self.name(name.as_ref()),
+            ty: self.ty(ty),
+        }
     }
 
     pub fn expr_stmt(&'a self, val: impl Into<Expr<'a>>) -> StmtRef<'a> {
