@@ -57,8 +57,15 @@ pub enum Stmt<'a> {
 pub enum Expr<'a> {
     Block(Vec<StmtRef<'a>>),
     Fun(Fun<'a>),
+    Call(Call<'a>),
     Literal(Literal),
     Ident(Name),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Call<'a> {
+    pub fun: Name,
+    pub args: Vec<ExprRef<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]

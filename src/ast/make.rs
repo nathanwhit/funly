@@ -54,6 +54,20 @@ impl<'a> AstContext<'a> {
     }
 }
 
+#[allow(unused_macros)]
+macro_rules! exprs {
+    ($ctx: ident, [$($e: expr),*]) => {
+        vec![
+            $(
+                $ctx.expr($e)
+            ),*
+        ]
+    };
+}
+
+#[allow(unused_imports)]
+pub(crate) use exprs;
+
 #[cfg(test)]
 #[duplicate::duplicate_item(
     Ty      Ref;

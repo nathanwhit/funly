@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::ast::{Arg, AstContext, Expr, Fun, Literal, Name, Program, Stmt, Type};
+use crate::ast::{Arg, AstContext, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 macro_rules! parser {
     ($t: ty) => {
@@ -59,6 +59,15 @@ peg::parser! {
             Fun { args, ret: ctx.alloc(ret), body: ctx.alloc(body) }
         }
 
+        pub rule call() -> Call<'a>
+            = fun:ident() _ "(" _ args:expr() ** ("," _) _ ")"
+        {
+            Call {
+                fun,
+                args: args.into_iter().map(|e| ctx.alloc(e)).collect()
+            }
+        }
+
         pub rule stmt() -> Stmt<'a>
             = _ lhs:expr() _ "=" _ rhs:expr() _ ";" { Stmt::Assign { lhs: ctx.alloc(lhs), rhs: ctx.alloc(rhs) } }
                 / _ e:expr() _ ";" _ { Stmt::Semi(ctx.alloc(e)) }
@@ -71,7 +80,7 @@ peg::parser! {
 
 #[cfg(test)]
 mod test {
-    use crate::ast::make;
+    use crate::ast::make::{self, exprs};
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -230,6 +239,17 @@ mod test {
                 )
             }
         );
+
+        call(ctx)
+        ---------
+        no_args     : "foo()" => Ok(Call {
+            fun: ctx.name("foo"),
+            args: vec![]
+        }),
+        with_args   : "foo(bar, 1, 2)" => Ok(Call {
+            fun: ctx.name("foo"),
+            args: exprs!(ctx, [ctx.name("bar"), make::lit(1), make::lit(2)])
+        });
 
         stmt(ctx)
         ---------

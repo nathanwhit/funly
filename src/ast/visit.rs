@@ -1,6 +1,6 @@
 use duplicate::duplicate_item;
 
-use super::{Arg, Expr, Fun, Literal, Name, Program, Stmt, Type};
+use super::{Arg, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 pub trait Visitor<'ast>: Sized {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
@@ -13,6 +13,10 @@ pub trait Visitor<'ast>: Sized {
 
     fn visit_fun(&mut self, fun: &'ast Fun) {
         walk_fun(self, fun)
+    }
+
+    fn visit_call(&mut self, call: &'ast Call) {
+        walk_call(self, call)
     }
 
     fn visit_arg(&mut self, arg: &'ast Arg) {
@@ -56,6 +60,7 @@ pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
         Expr::Fun(fun) => visitor.visit_fun(fun),
         Expr::Literal(lit) => visitor.visit_literal(lit),
         Expr::Ident(ident) => visitor.visit_ident(ident),
+        Expr::Call(call) => visitor.visit_call(call),
     }
 }
 
@@ -70,6 +75,12 @@ pub fn walk_arg<'a, V: Visitor<'a>>(visitor: &mut V, arg: &'a Arg) {
     let Arg { name, ty } = arg;
     visitor.visit_ident(name);
     visitor.visit_type(ty);
+}
+
+pub fn walk_call<'a, V: Visitor<'a>>(visitor: &mut V, call: &'a Call) {
+    let Call { fun, args } = call;
+    visitor.visit_ident(fun);
+    walk_list!(visitor, visit_expr, args);
 }
 
 pub fn walk_program<'a, V: Visitor<'a>>(visitor: &mut V, program: &'a Program<'a>) {
