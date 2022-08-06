@@ -14,7 +14,7 @@ use self::syntax::{Syntax, SyntaxSets};
 
 mod syntax;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
 pub struct Binding(u64);
 
 #[derive(Default)]
@@ -31,10 +31,7 @@ impl<'ast> Visitor<'ast> for Resolver {
                 for &stmt in stmts {
                     self.scope_sets.add_scopes(&pending_scopes, stmt);
                     match stmt {
-                        crate::ast::Stmt::Assign {
-                            lhs: Expr::Ident(name),
-                            rhs,
-                        } => {
+                        crate::ast::Stmt::Bind { name, rhs } => {
                             let scope = self.scope_sets.new_scope();
                             self.scope_sets.add_scope(scope, name);
                             self.scope_sets.add_scope(scope, *rhs);
@@ -142,7 +139,7 @@ pub enum ResolutionError {
 #[cfg(test)]
 mod test {
     use crate::{
-        ast::{make, Arg, AstContext, Fun, Type},
+        ast::{make, Arg, AstCtx, Fun, Type},
         resolve::Binding,
     };
 
@@ -150,7 +147,7 @@ mod test {
 
     #[test]
     fn fun_body_resolution() {
-        let ctx = AstContext::new();
+        let ctx = AstCtx::new();
         let arg_foo = ctx.name("foo");
         let body_foo = ctx.name("foo");
         let fun = ctx.expr(Fun {
@@ -171,20 +168,20 @@ mod test {
 
     #[test]
     fn block_resolution() {
-        let ctx = AstContext::new();
-        let assign_foo = ctx.name("foo");
+        let ctx = AstCtx::new();
+        let bind_foo = ctx.name("foo");
         let block_foo = ctx.name("foo");
         let nested_block_foo = ctx.name("foo");
 
         let block = ctx.expr(vec![
-            ctx.assign(assign_foo.clone(), make::lit(1)),
-            ctx.assign(ctx.name("bar"), block_foo.clone()),
+            ctx.bind(bind_foo.clone(), make::lit(1)),
+            ctx.bind(ctx.name("bar"), block_foo.clone()),
             ctx.semi_stmt(vec![ctx.expr_stmt(nested_block_foo.clone())]),
         ]);
 
         let resolver = Resolver::new(block);
 
-        let binding = resolver.resolve(&assign_foo).unwrap();
+        let binding = resolver.resolve(&bind_foo).unwrap();
         let block_binding = resolver.resolve(&block_foo).unwrap();
         let nested_block_binding = resolver.resolve(&nested_block_foo).unwrap();
 
@@ -195,14 +192,14 @@ mod test {
 
     #[test]
     fn shadowing() {
-        let ctx = AstContext::new();
-        let assign_foo = ctx.name("foo");
+        let ctx = AstCtx::new();
+        let bind_foo = ctx.name("foo");
         let block_foo = ctx.name("foo");
         let fun_foo = ctx.name("foo");
         let body_foo = ctx.name("foo");
 
         let block = ctx.expr(vec![
-            ctx.assign(assign_foo.clone(), make::lit(1)),
+            ctx.bind(bind_foo.clone(), make::lit(1)),
             ctx.semi_stmt(block_foo.clone()),
             ctx.expr_stmt(Fun {
                 args: vec![Arg {
@@ -216,7 +213,7 @@ mod test {
 
         let resolver = Resolver::new(block);
 
-        let binding = resolver.resolve(&assign_foo).unwrap();
+        let binding = resolver.resolve(&bind_foo).unwrap();
         let block_binding = resolver.resolve(&block_foo).unwrap();
         let fun_binding = resolver.resolve(&fun_foo).unwrap();
         let body_binding = resolver.resolve(&body_foo).unwrap();

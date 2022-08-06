@@ -162,12 +162,12 @@ impl SyntaxSets {
 
 #[cfg(test)]
 mod test {
-    use crate::ast::AstContext;
+    use crate::ast::AstCtx;
 
     use super::SyntaxSets;
 
-    fn setup<'a>() -> (AstContext<'a>, SyntaxSets) {
-        (AstContext::default(), SyntaxSets::default())
+    fn setup<'a>() -> (AstCtx<'a>, SyntaxSets) {
+        (AstCtx::default(), SyntaxSets::default())
     }
 
     #[test]

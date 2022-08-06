@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 
-use funly::{ast::AstContext, parse::parser};
+use funly::{ast::AstCtx, parse::parser};
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -9,7 +9,7 @@ fn main() -> color_eyre::Result<()> {
     stdin.lock().read_to_end(&mut buf)?;
     let input = String::from_utf8(buf)?;
     println!("{input}");
-    let mut ctx = AstContext::new();
+    let mut ctx = AstCtx::new();
     let program = parser::program(&input, &mut ctx)?;
     println!("{program:?}");
     Ok(())

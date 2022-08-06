@@ -10,7 +10,7 @@ macro_rules! declare_arena {
             pub type [<$t Arena>]<$a> = ::typed_arena::Arena<$t<$a>>;
             pub type [<$t Ref>]<$a> = &$a $t<$a>;
             impl<'a> ArenaAllocated<'a> for $t<'a> {
-                fn alloc(self, context: &'a AstContext<'a>) -> &'a $t<'a> where Self: 'a {
+                fn alloc(self, context: &'a AstCtx<'a>) -> &'a $t<'a> where Self: 'a {
                     context. [<$t:lower s>].alloc(self)
                 }
             }
@@ -35,7 +35,7 @@ macro_rules! declare_arena {
 }
 
 pub trait ArenaAllocated<'a> {
-    fn alloc(self, context: &'a AstContext<'a>) -> &'a Self
+    fn alloc(self, context: &'a AstCtx<'a>) -> &'a Self
     where
         Self: 'a;
 }
@@ -43,7 +43,7 @@ pub trait ArenaAllocated<'a> {
 declare_arena!(Stmt<'a>, Expr<'a>, Type<'a>);
 
 #[derive(Default)]
-pub struct AstContext<'a> {
+pub struct AstCtx<'a> {
     stmts: StmtArena<'a>,
     exprs: ExprArena<'a>,
     types: TypeArena<'a>,
@@ -53,7 +53,7 @@ pub struct AstContext<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NameId(u64);
 
-impl<'a> AstContext<'a> {
+impl<'a> AstCtx<'a> {
     pub fn alloc<T>(&'a self, t: T) -> &'a T
     where
         T: ArenaAllocated<'a>,

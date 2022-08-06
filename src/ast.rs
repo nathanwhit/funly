@@ -2,7 +2,7 @@ pub mod context;
 pub mod make;
 pub mod visit;
 
-pub use context::{ArenaAllocated, AstContext};
+pub use context::{ArenaAllocated, AstCtx};
 use derive_more::From;
 
 use self::context::{ExprRef, NameId, StmtRef, TypeRef};
@@ -94,6 +94,7 @@ pub enum Type<'a> {
         args: Vec<TypeRef<'a>>,
         ret: TypeRef<'a>,
     },
+    Unit,
 }
 
 #[cfg(test)]

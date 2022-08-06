@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::ast::{Arg, AstContext, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
+use crate::ast::{Arg, AstCtx, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 macro_rules! parser {
     ($t: ty) => {
@@ -14,19 +14,19 @@ macro_rules! parser_todo {
     };
 }
 
-fn _literal<'a>(_ctx: &'a AstContext) -> parser!(Literal) {
+fn _literal<'a>(_ctx: &'a AstCtx) -> parser!(Literal) {
     let int = text::int(10)
         .map(|s: String| Literal::Int(s.parse().unwrap()))
         .padded();
     int
 }
 
-fn _expr<'a>(_ctx: &'a AstContext) -> parser!(Expr<'a>) {
+fn _expr<'a>(_ctx: &'a AstCtx) -> parser!(Expr<'a>) {
     parser_todo!()
 }
 
 peg::parser! {
-    pub grammar parser<'a>(ctx: &'a AstContext<'a>) for str {
+    pub grammar parser<'a>(ctx: &'a AstCtx<'a>) for str {
         rule number() -> i64
             = n:$(['0'..='9']+) {? n.parse().or(Err("i64"))}
 
@@ -41,6 +41,7 @@ peg::parser! {
 
         pub rule type_() -> Type<'a>
             = "int" { Type::Int }
+                / "unit" { Type::Unit }
                 / "fun" _ "(" _ args:type_() ** ("," _) ")" _ "->" _ ret:type_()
                     { Type::Fun { args: args.into_iter().map(|t| ctx.alloc(t)).collect(), ret: ctx.alloc(ret) } }
 
@@ -48,9 +49,10 @@ peg::parser! {
             = name:ident() _ ":" _ ty:type_() { Arg { name, ty: ctx.alloc(ty) } }
 
         pub rule expr() -> Expr<'a>
-            = id:ident() { Expr::Ident(id) }
+            = f:fun() { Expr::Fun(f) }
                 / lit:literal() { Expr::Literal(lit) }
-                / f:fun() { Expr::Fun(f) }
+                / call:call() { Expr::Call(call) }
+                / id:ident() { Expr::Ident(id) }
                 / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
 
         pub rule fun() -> Fun<'a>
@@ -69,7 +71,8 @@ peg::parser! {
         }
 
         pub rule stmt() -> Stmt<'a>
-            = _ lhs:expr() _ "=" _ rhs:expr() _ ";" { Stmt::Assign { lhs: ctx.alloc(lhs), rhs: ctx.alloc(rhs) } }
+            = _ lhs:expr() _ ":" _ "=" _ rhs:expr() _ ";" { Stmt::Assign { lhs: ctx.alloc(lhs), rhs: ctx.alloc(rhs) } }
+                / name:ident() _ "=" _ rhs:expr() _ ";" { Stmt::Bind { name, rhs: ctx.alloc(rhs) } }
                 / _ e:expr() _ ";" _ { Stmt::Semi(ctx.alloc(e)) }
                 / _ e:expr() _ { Stmt::Expr(ctx.alloc(e)) }
 
@@ -90,7 +93,7 @@ mod test {
         ($name: ident : $parser: ident | $input: expr => $output: expr) => {
             #[test]
             fn $name() {
-                let mut ctx = $crate::ast::AstContext::new();
+                let mut ctx = $crate::ast::AstCtx::new();
                 ::pretty_assertions::assert_eq!(
                     $parser(&mut ctx).parse($input).map_err(|_| ()),
                     $output
@@ -114,7 +117,7 @@ mod test {
                 #[test]
                 #[allow(non_snake_case)]
                 fn [<peg_ $name>]() {
-                    let $ctx = $crate::ast::AstContext::new();
+                    let $ctx = $crate::ast::AstCtx::new();
                     let actual = parser::$parser($input, &$ctx).map_err(|e| eprintln!("{e}"));
                     let expected: Result<_, ()> = $output;
                     match (actual, expected) {
@@ -152,7 +155,7 @@ mod test {
             paste::paste! {
                 #[test]
                 fn [<peg_ $name>]() {
-                    let ctx = $crate::ast::AstContext::new();
+                    let ctx = $crate::ast::AstCtx::new();
                     ::pretty_assertions::assert_eq!(parser::$parser($input, &ctx), $output);
                 }
             }
@@ -188,13 +191,13 @@ mod test {
 
     #[test]
     fn peg_literal() {
-        let mut ctx = AstContext::new();
+        let mut ctx = AstCtx::new();
         assert_eq!(parser::literal("50", &mut ctx).unwrap(), Literal::Int(50));
     }
 
     #[test]
     fn peg_fun() {
-        let ctx = AstContext::new();
+        let ctx = AstCtx::new();
         let result = parser::fun("fun() -> int { 1 }", &ctx).unwrap();
         let expected = Fun {
             args: vec![],
@@ -253,10 +256,10 @@ mod test {
 
         stmt(ctx)
         ---------
-        semi   : "1;"       => Ok(Stmt::Semi(ctx.expr(make::lit(1)))),
-        expr   : "1"        => Ok(Stmt::Expr(ctx.expr(make::lit(1)))),
-        assign : "foo = 1;"  => Ok(Stmt::Assign { lhs: ctx.expr(ctx.name("foo")), rhs: ctx.expr(make::lit(1)) }),
-
+        semi   : "1;"           => Ok(Stmt::Semi(ctx.expr(make::lit(1)))),
+        expr   : "1"            => Ok(Stmt::Expr(ctx.expr(make::lit(1)))),
+        assign : "foo := 1;"    => Ok(Stmt::Assign { lhs: ctx.expr(ctx.name("foo")), rhs: ctx.expr(make::lit(1)) }),
+        bind   : "foo = 1;"     => Ok(Stmt::Bind { name: ctx.name("foo"), rhs: ctx.expr(make::lit(1)) }),
         block  : "{ 1; 2; 3; 4; 5};" => Ok(Stmt::Semi(ctx.expr_block( {
             vec![
                 Stmt::Semi(ctx.expr(make::lit(1))),
@@ -283,7 +286,22 @@ mod test {
                 args: vec![ctx.ty(Int)],
                 ret: ctx.ty(Int),
             }),
-        }),
+        });
+
+        expr(ctx)
+        ---------
+        block_with_stuff : "{
+            id = fun(a: int) -> int { a };
+            id ( fun(b: int) -> int { b } )
+        }" => Ok(Expr::Block(vec![ctx.bind(ctx.name("id"), ctx.expr(Fun {
+            args: vec![ctx.arg("a", Type::Int)],
+            ret: ctx.ty(Type::Int),
+            body: ctx.expr(vec![ctx.expr_stmt(ctx.name("a"))])
+        })), ctx.expr_stmt(Call { fun: ctx.name("id"), args: vec![ctx.expr(Fun {
+            args: vec![ctx.arg("b", Type::Int)],
+            ret: ctx.ty(Type::Int),
+            body: ctx.expr(vec![ctx.expr_stmt(ctx.name("b"))])
+        })] })]))
     }
 
     parse_test! {
