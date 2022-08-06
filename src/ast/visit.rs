@@ -49,6 +49,10 @@ pub fn walk_stmt<'a, V: Visitor<'a>>(visitor: &mut V, stmt: &'a Stmt) {
             visitor.visit_expr(rhs);
         }
         Stmt::Expr(expr) | Stmt::Semi(expr) => visitor.visit_expr(expr),
+        Stmt::Bind { name: lhs, rhs } => {
+            visitor.visit_ident(lhs);
+            visitor.visit_expr(rhs);
+        }
     }
 }
 

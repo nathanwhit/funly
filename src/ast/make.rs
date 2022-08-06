@@ -52,6 +52,13 @@ impl<'a> AstContext<'a> {
             rhs: self.expr(rhs),
         })
     }
+
+    pub fn bind(&'a self, name: Name, rhs: impl Into<Expr<'a>>) -> StmtRef<'a> {
+        self.alloc(Stmt::Bind {
+            name,
+            rhs: self.alloc(rhs.into()),
+        })
+    }
 }
 
 #[allow(unused_macros)]

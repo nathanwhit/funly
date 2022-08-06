@@ -48,6 +48,7 @@ impl Name {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Stmt<'a> {
+    Bind { name: Name, rhs: ExprRef<'a> },
     Assign { lhs: ExprRef<'a>, rhs: ExprRef<'a> },
     Expr(ExprRef<'a>),
     Semi(ExprRef<'a>),
