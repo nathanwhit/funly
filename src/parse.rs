@@ -301,7 +301,7 @@ mod test {
             args: vec![ctx.arg("b", Type::Int)],
             ret: ctx.ty(Type::Int),
             body: ctx.expr(vec![ctx.expr_stmt(ctx.name("b"))])
-        })] })]))
+        })]})]))
     }
 
     parse_test! {

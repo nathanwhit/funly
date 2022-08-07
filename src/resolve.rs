@@ -2,10 +2,12 @@
 //!
 //! We use the [Binding as Sets of Scopes](https://www.cs.utah.edu/plt/scope-sets/) model
 //! for its simplicity and to set us up well for macro support in the future.
-use std::{collections::HashMap, ops::Not};
+use std::{collections::HashMap, fmt::Debug, ops::Not};
 use thiserror::Error;
+use tracing::instrument;
 
 use crate::ast::{
+    context::StmtRef,
     visit::{self, Visit, Visitor},
     Expr, Ident, Name,
 };
@@ -17,30 +19,40 @@ mod syntax;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
 pub struct Binding(u64);
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Resolver {
     scope_sets: SyntaxSets,
     table: BindingTable,
 }
 
+impl Resolver {
+    fn visit_binding_stmts<'a>(&mut self, stmts: &[StmtRef<'a>]) {
+        let mut pending_scopes = Vec::new();
+        for &stmt in stmts {
+            self.scope_sets.add_scopes(&pending_scopes, stmt);
+            match stmt {
+                crate::ast::Stmt::Bind { name, rhs } => {
+                    let scope = self.scope_sets.new_scope();
+                    self.scope_sets.add_scope(scope, name);
+                    self.scope_sets.add_scope(scope, *rhs);
+                    self.add_binding(name);
+                    pending_scopes.push(scope);
+                }
+                s => visit::walk_stmt(self, s),
+            }
+        }
+    }
+}
 impl<'ast> Visitor<'ast> for Resolver {
+    fn visit_program(&mut self, program: &'ast crate::ast::Program) {
+        self.visit_binding_stmts(&program.stmts);
+    }
+
+    #[instrument(level = "trace")]
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Block(stmts) => {
-                let mut pending_scopes = Vec::new();
-                for &stmt in stmts {
-                    self.scope_sets.add_scopes(&pending_scopes, stmt);
-                    match stmt {
-                        crate::ast::Stmt::Bind { name, rhs } => {
-                            let scope = self.scope_sets.new_scope();
-                            self.scope_sets.add_scope(scope, name);
-                            self.scope_sets.add_scope(scope, *rhs);
-                            self.add_binding(name);
-                            pending_scopes.push(scope);
-                        }
-                        s => visit::walk_stmt(self, s),
-                    }
-                }
+                self.visit_binding_stmts(&stmts);
             }
             expr => visit::walk_expr(self, expr),
         }
