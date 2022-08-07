@@ -75,7 +75,6 @@ impl<'a> TypeCtx<'a> {
     }
 
     pub fn type_of(&self, expr: ExprRef<'a>) -> Result<TypeRef<'a>, TypeError> {
-        println!("{expr:?}");
         if let Some(ty) = self.expr_types.get(&ByAddress(expr)) {
             return Ok(ty.value());
         }
@@ -164,10 +163,10 @@ pub enum TypeError<'a> {
     #[error("Type mismatch")]
     Mismatch(TypeRef<'a>, TypeRef<'a>),
 
-    #[error("Resolution failure")]
+    #[error("Resolution failure: {0}")]
     Unresolved(#[from] ResolutionError),
 
-    #[error("Unknow")]
+    #[error("Unknown")]
     Unknown,
 
     #[error("The type {0:?} is not callable")]

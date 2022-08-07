@@ -1,7 +1,10 @@
 use std::{
     collections::{BTreeSet, HashMap},
+    fmt::Debug,
     marker::PhantomData,
 };
+
+use tracing::instrument;
 
 use crate::ast::{
     context::NameId,
@@ -77,7 +80,6 @@ where
     F: FnMut(&'ast Name) + 'ast,
 {
     fn visit_ident(&mut self, name: &'ast crate::ast::Name) {
-        println!("visiting {name:?}");
         (self.action)(name)
     }
 }
@@ -92,11 +94,12 @@ impl SyntaxSets {
         println!("{:?}", self.scope_sets);
     }
 
+    #[instrument(level = "trace")]
     pub fn add_scope<'me, 'ast, T: Visit<'ast> + 'ast>(&'me mut self, scope: Scope, to: &'me T)
     where
         'me: 'ast,
+        T: Debug,
     {
-        println!("doin it");
         let mut changer = SyntaxChanger::new(move |name| {
             let scope = scope.clone();
             self.add_scope_to_name(scope, name)
@@ -104,11 +107,12 @@ impl SyntaxSets {
         to.visit(&mut changer);
     }
 
+    #[instrument(level = "trace")]
     pub fn add_scopes<'me, 'ast, T, S>(&'me mut self, scopes: S, to: &'me T)
     where
-        T: Visit<'ast> + 'ast,
+        T: Visit<'ast> + 'ast + Debug,
         'me: 'ast,
-        S: IntoIterator<Item = &'me Scope> + Clone + 'me,
+        S: IntoIterator<Item = &'me Scope> + Clone + 'me + Debug,
     {
         let mut changer = SyntaxChanger::new(move |name| {
             self.add_scopes_to_name(scopes.clone().into_iter().copied(), name)
