@@ -90,10 +90,6 @@ impl SyntaxSets {
         Scope::new(self.scope_idx)
     }
 
-    pub fn print_scopes(&self) {
-        println!("{:?}", self.scope_sets);
-    }
-
     #[instrument(level = "trace")]
     pub fn add_scope<'me, 'ast, T: Visit<'ast> + 'ast>(&'me mut self, scope: Scope, to: &'me T)
     where

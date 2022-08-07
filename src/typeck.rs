@@ -115,6 +115,16 @@ impl<'a> TypeCtx<'a> {
                 crate::ast::Literal::Int(_) => self.ast.ty(Type::Int),
             },
             crate::ast::Expr::Ident(name) => self.type_of_name(name)?.ok_or(TypeError::Unknown)?,
+            crate::ast::Expr::BinOp(a, _, b) => {
+                let a_ty = self.type_of(a)?;
+                let b_ty = self.type_of(b)?;
+                match (a_ty, b_ty) {
+                    (Type::Int, Type::Int) => self.ast.ty(Type::Int),
+                    (Type::Int, b) => return Err(TypeError::Mismatch(a_ty, b)),
+                    (a, Type::Int) => return Err(TypeError::Mismatch(b_ty, a)),
+                    (a, _) => return Err(TypeError::Mismatch(&Type::Int, a)),
+                }
+            }
         };
 
         self.expr_types.insert(ByAddress(expr), ty);

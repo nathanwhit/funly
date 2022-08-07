@@ -61,6 +61,15 @@ pub enum Expr<'a> {
     Call(Call<'a>),
     Literal(Literal),
     Ident(Name),
+    BinOp(ExprRef<'a>, Op, ExprRef<'a>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Op {
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -98,4 +107,12 @@ pub enum Type<'a> {
 }
 
 #[cfg(test)]
-mod test_impls {}
+mod test_impls {
+    use super::{Expr, Literal};
+
+    impl<'a> From<i64> for Expr<'a> {
+        fn from(val: i64) -> Self {
+            Self::Literal(Literal::Int(val))
+        }
+    }
+}

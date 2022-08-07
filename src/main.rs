@@ -1,4 +1,4 @@
-use funly::{ast::AstCtx, compile::compile, parse::parser};
+use funly::compile::compile;
 use std::{
     fs,
     io::{self, Read},

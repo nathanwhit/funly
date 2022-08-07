@@ -1,6 +1,6 @@
 use super::{
     context::{ExprRef, StmtRef, TypeRef},
-    Arg, AstCtx, Expr, Literal, Name, Stmt, Type,
+    Arg, AstCtx, Expr, Literal, Name, Op, Stmt, Type,
 };
 
 pub fn lit(val: impl Into<Literal>) -> Literal {
@@ -13,6 +13,15 @@ pub fn expr<'a>(val: impl Into<Expr<'a>>) -> Expr<'a> {
 
 pub fn alloc_expr<'a>(ctx: &'a AstCtx<'a>, val: impl Into<Expr<'a>>) -> ExprRef<'a> {
     ctx.alloc(val.into())
+}
+
+pub fn bin_op<'a>(
+    ctx: &'a AstCtx<'a>,
+    a: impl Into<Expr<'a>>,
+    op: Op,
+    b: impl Into<Expr<'a>>,
+) -> Expr<'a> {
+    Expr::BinOp(ctx.expr(a), op, ctx.expr(b))
 }
 
 impl<'a> AstCtx<'a> {

@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::ast::{Arg, AstCtx, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
+use crate::ast::{Arg, AstCtx, Call, Expr, Fun, Literal, Name, Op, Program, Stmt, Type};
 
 macro_rules! parser {
     ($t: ty) => {
@@ -50,10 +50,24 @@ peg::parser! {
 
         pub rule expr() -> Expr<'a>
             = f:fun() { Expr::Fun(f) }
-                / lit:literal() { Expr::Literal(lit) }
                 / call:call() { Expr::Call(call) }
+                / bin_op()
+                / lit:literal() { Expr::Literal(lit) }
                 / id:ident() { Expr::Ident(id) }
                 / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
+
+        pub rule bin_op() -> Expr<'a>
+            = precedence! {
+                a:(@) _ "+" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Add, ctx.expr(b)) }
+                a:(@) _ "-" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Sub, ctx.expr(b)) }
+                --
+                a:(@) _ "*" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Mul, ctx.expr(b)) }
+                a:(@) _ "/" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Div, ctx.expr(b)) }
+                --
+                n:number() { Expr::Literal(Literal::Int(n)) }
+                id:ident() { Expr::Ident(id) }
+                "(" _ e:bin_op() _ ")" { e }
+            }
 
         pub rule fun() -> Fun<'a>
             = "fun" _ "(" _ args:arg() ** ("," _) ")" _ "->" _ ret:type_() _ body:expr()
@@ -301,7 +315,13 @@ mod test {
             args: vec![ctx.arg("b", Type::Int)],
             ret: ctx.ty(Type::Int),
             body: ctx.expr(vec![ctx.expr_stmt(ctx.name("b"))])
-        })]})]))
+        })]})]));
+
+        bin_op(ctx)
+        -----------
+        add : "1 + 2" => Ok(make::bin_op(&ctx, 1, Op::Add, 2)),
+        add_assoc : "1 + 2 + 3" => Ok(make::bin_op(&ctx, ctx.expr(make::bin_op(&ctx, 1, Op::Add, 2)), Op::Add, 3)),
+        add_mul_prec : "1 + 2 * 3" => Ok(make::bin_op(&ctx, ctx.expr(1), Op::Add, ctx.expr(make::bin_op(&ctx, 2, Op::Mul, 3))))
     }
 
     parse_test! {

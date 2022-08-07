@@ -65,6 +65,10 @@ pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
         Expr::Literal(lit) => visitor.visit_literal(lit),
         Expr::Ident(ident) => visitor.visit_ident(ident),
         Expr::Call(call) => visitor.visit_call(call),
+        Expr::BinOp(lhs, _, rhs) => {
+            visitor.visit_expr(lhs);
+            visitor.visit_expr(rhs);
+        }
     }
 }
 
