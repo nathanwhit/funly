@@ -55,6 +55,7 @@ peg::parser! {
                 / lit:literal() { Expr::Literal(lit) }
                 / id:ident() { Expr::Ident(id) }
                 / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
+                / "(" _ e:expr() _ ")" { e }
 
         pub rule bin_op() -> Expr<'a>
             = precedence! {
