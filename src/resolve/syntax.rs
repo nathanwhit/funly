@@ -79,7 +79,9 @@ impl<'ast, F> Visitor<'ast> for SyntaxChanger<'ast, F>
 where
     F: FnMut(&'ast Name) + 'ast,
 {
+    fn visit_fun(&mut self, _fun: &'ast crate::ast::Fun) {}
     fn visit_ident(&mut self, name: &'ast crate::ast::Name) {
+        tracing::trace!(?name, "visiting ident");
         (self.action)(name)
     }
 }
