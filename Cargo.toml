@@ -21,6 +21,7 @@ paste = "1.0.7"
 peg = "0.8.0"
 thiserror = "1.0.32"
 tracing = "0.1.36"
+tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 tracing-tree = "0.2.1"
 typed-arena = "2.0.1"

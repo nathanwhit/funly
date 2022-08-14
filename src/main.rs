@@ -20,13 +20,9 @@ fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     tracing::subscriber::set_global_default(
         tracing_subscriber::registry()
+            .with(tracing_error::ErrorLayer::default())
             .with(EnvFilter::from_default_env())
-            .with(
-                HierarchicalLayer::default()
-                    .with_ansi(true)
-                    .with_bracketed_fields(true)
-                    .with_indent_lines(true),
-            ),
+            .with(HierarchicalLayer::default().with_indent_lines(true)),
     )?;
     let args: Args = argh::from_env();
     let input = match args.path {

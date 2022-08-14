@@ -397,6 +397,7 @@ dependencies = [
  "pretty_assertions",
  "thiserror",
  "tracing",
+ "tracing-error",
  "tracing-subscriber",
  "tracing-tree",
  "typed-arena",
