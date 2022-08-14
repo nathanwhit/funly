@@ -1,8 +1,11 @@
+use std::mem;
+
 use thiserror::Error;
 use tracing::instrument;
 
 use crate::{
     ast::AstCtx,
+    jit::{JITError, JIT},
     parse::parser,
     resolve::{ResolutionError, Resolver},
     typeck::TypeCtx,
@@ -30,10 +33,24 @@ pub fn compile<'a>(input: &'a str) -> Result<(), CompileError> {
             .map_err(|e| CompileError::TypeError(e.to_string()))?;
         println!("{t:#?}");
     }
+
+    let mut jit = JIT::new(&ty)?;
+
+    let code = jit.compile(&program)?;
+
+    unsafe {
+        let ret: i64 = run_code(code, ());
+        println!("{ret:?}");
+    }
     Ok(())
 }
 
-#[derive(Error, Clone, Debug, PartialEq)]
+unsafe fn run_code<I, O>(code: *const u8, input: I) -> O {
+    let code_fn = mem::transmute::<_, fn(I) -> O>(code);
+    code_fn(input)
+}
+
+#[derive(Error, Debug)]
 pub enum CompileError {
     #[error("TypeError occurred: {0}")]
     TypeError(String),
@@ -43,4 +60,7 @@ pub enum CompileError {
 
     #[error("Validation error")]
     ValidationError,
+
+    #[error("JIT error occurred: {0}")]
+    JITError(#[from] JITError),
 }

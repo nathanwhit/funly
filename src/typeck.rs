@@ -29,6 +29,10 @@ impl<'a> TypeCtx<'a> {
         }
     }
 
+    pub fn resolve(&self, name: &Name) -> Result<Binding, TypeError> {
+        self.resolver.resolve(name).map_err(Into::into)
+    }
+
     pub fn type_of_name(&self, name: &Name) -> Result<Option<TypeRef<'a>>, TypeError> {
         let binding = self.resolver.resolve(name)?;
 
@@ -46,8 +50,9 @@ impl<'a> TypeCtx<'a> {
 
         let ty = match stmt {
             crate::ast::Stmt::Assign { lhs, rhs } => {
-                let _ = self.type_of(lhs)?;
-                let _ = self.type_of(rhs)?;
+                let lhs = self.type_of(lhs)?;
+                let rhs = self.type_of(rhs)?;
+                type_eq(lhs, rhs)?;
                 self.ast.ty(Type::Unit)
             }
             crate::ast::Stmt::Expr(expr) => self.type_of(expr)?,

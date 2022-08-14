@@ -2,6 +2,7 @@
 //!
 //! We use the [Binding as Sets of Scopes](https://www.cs.utah.edu/plt/scope-sets/) model
 //! for its simplicity and to set us up well for macro support in the future.
+use core::fmt;
 use std::{collections::HashMap, fmt::Debug, ops::Not};
 use thiserror::Error;
 use tracing::instrument;
@@ -18,6 +19,12 @@ mod syntax;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
 pub struct Binding(u64);
+
+impl fmt::Display for Binding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "__binding_{}", self.0)
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct Resolver {
@@ -269,6 +276,6 @@ mod test {
         let binding = resolver.resolve(&bind_foo).unwrap();
         let block_binding = resolver.resolve(&block_foo).unwrap();
         assert_eq!(binding, block_binding);
-        let body_binding = resolver.resolve(&body_foo).unwrap_err();
+        let _ = resolver.resolve(&body_foo).unwrap_err();
     }
 }
