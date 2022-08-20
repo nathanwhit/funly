@@ -392,6 +392,7 @@ dependencies = [
  "dashmap",
  "derive_more",
  "duplicate",
+ "indoc",
  "paste",
  "peg",
  "pretty_assertions",
@@ -464,6 +465,12 @@ name = "indenter"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
+
+[[package]]
+name = "indoc"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adab1eaa3408fb7f0c777a73e7465fd5656136fc93b670eb6df3c88c2c1344e3"
 
 [[package]]
 name = "lazy_static"

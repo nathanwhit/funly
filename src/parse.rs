@@ -34,7 +34,7 @@ peg::parser! {
             = l:number() { Literal::Int(l) }
 
         rule _
-            = [' ' | '\t' | '\n']*
+            = ([' ' | '\t' | '\n'] / ("#" [^'\n']*))*
 
         pub rule ident() -> Name
             = id:$(['a'..='z' | 'A'..='Z'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { ctx.name(id) }
@@ -75,6 +75,9 @@ peg::parser! {
         {
             Fun { args, ret: ctx.alloc(ret), body: ctx.alloc(body) }
         }
+
+        pub rule standalone_fun() -> Fun<'a>
+            = f:fun() _ { f }
 
         pub rule call() -> Call<'a>
             = fun:ident() _ "(" _ args:expr() ** ("," _) _ ")"

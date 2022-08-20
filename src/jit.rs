@@ -76,12 +76,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         builder.seal_block(entry_block);
 
         let zero = builder.ins().iconst(INT, 0);
-        // let return_var = Variable::new(0);
-        // builder.declare_var(return_var, INT);
 
-        // builder.def_var(return_var, zero);
-
-        // let return_val = builder.use_var(return_var);
         let mut translator = Translator::new(builder, &mut self.module, &self.ty_ctx);
 
         let mut last = Unit;
@@ -95,7 +90,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
             Unit => translator.builder.ins().return_(&[zero]),
         };
 
-        println!("{:?}", translator.builder.func);
+        tracing::info!("{:?}", translator.builder.func);
 
         let (to_build, state) = translator.finish();
 
@@ -115,6 +110,26 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
 
         let code = self.module.get_finalized_function(id);
         Ok(code)
+    }
+
+    pub fn compile_standalone_fun(&mut self, fun: &'ast Fun<'ast>) -> JITResult<*const u8> {
+        let Fun { args, ret, .. } = fun;
+        let state = TranslationState::new();
+
+        for arg in args {
+            let arg_ty = ty_to_clif(arg.ty)?;
+            self.ctx.func.signature.params.push(AbiParam::new(arg_ty));
+        }
+        let ret_ty = ty_to_clif(ret)?;
+        self.ctx.func.signature.returns.push(AbiParam::new(ret_ty));
+        let func =
+            self.module
+                .declare_function("fun", Linkage::Export, &self.ctx.func.signature)?;
+        self.module.clear_signature(&mut self.ctx.func.signature);
+        let _ = self.compile_fun(func, fun, state)?;
+        self.module.finalize_definitions();
+
+        Ok(self.module.get_finalized_function(func))
     }
 
     #[instrument]
@@ -140,7 +155,6 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         builder.switch_to_block(entry_block);
 
         builder.append_block_params_for_function_params(entry_block);
-        // builder.append_block_params_for_function_returns(entry_block);
 
         builder.seal_block(entry_block);
 
@@ -161,7 +175,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
             Unit => translator.builder.ins().return_(&[]),
         };
 
-        println!("{:?}", translator.builder.func);
+        println!("Fun = {:?}", translator.builder.func);
 
         let (to_build, state) = translator.finish();
 
@@ -292,7 +306,7 @@ use JITValue::Unit;
 fn ty_to_clif<'a>(ty: TypeRef<'a>) -> JITResult<Type> {
     Ok(match ty {
         crate::ast::Type::Int => INT,
-        crate::ast::Type::Fun { args, ret } => {
+        crate::ast::Type::Fun { .. } => {
             todo!()
         }
         crate::ast::Type::Unit => types::B1,
@@ -453,7 +467,7 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
         }
         let ty = match ty {
             crate::ast::Type::Int => INT,
-            crate::ast::Type::Fun { args, ret } => {
+            crate::ast::Type::Fun { .. } => {
                 todo!()
             }
             crate::ast::Type::Unit => types::B1,

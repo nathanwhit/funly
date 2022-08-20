@@ -27,4 +27,5 @@ tracing-tree = "0.2.1"
 typed-arena = "2.0.1"
 
 [dev-dependencies]
+indoc = "1.0.7"
 pretty_assertions = "1.2.1"

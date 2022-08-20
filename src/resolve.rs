@@ -41,6 +41,7 @@ impl Resolver {
                 crate::ast::Stmt::Bind { name, rhs } => {
                     let scope = self.scope_sets.new_scope();
                     self.scope_sets.add_scope(scope, name);
+                    self.scope_sets.add_scope(scope, *rhs);
                     self.add_binding(name);
                     pending_scopes.push(scope);
                     self.visit_expr(rhs);
@@ -249,33 +250,5 @@ mod test {
         assert_eq!(binding, block_binding);
         assert_eq!(fun_binding, body_binding);
         assert_ne!(binding, fun_binding);
-    }
-
-    #[test]
-    fn no_capture() {
-        let ctx = AstCtx::new();
-        let bind_foo = ctx.name("foo");
-        let block_foo = ctx.name("foo");
-        let body_foo = ctx.name("foo");
-
-        let block = ctx.expr(vec![
-            ctx.bind(bind_foo.clone(), make::lit(1)),
-            ctx.semi_stmt(block_foo.clone()),
-            ctx.expr_stmt(Fun {
-                args: vec![Arg {
-                    name: ctx.name("baz"),
-                    ty: ctx.ty(Type::Int),
-                }],
-                ret: ctx.ty(Type::Int),
-                body: ctx.expr(body_foo.clone()),
-            }),
-        ]);
-
-        let resolver = Resolver::new(block);
-
-        let binding = resolver.resolve(&bind_foo).unwrap();
-        let block_binding = resolver.resolve(&block_foo).unwrap();
-        assert_eq!(binding, block_binding);
-        let _ = resolver.resolve(&body_foo).unwrap_err();
     }
 }
