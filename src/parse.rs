@@ -30,8 +30,13 @@ peg::parser! {
         rule number() -> i64
             = n:$(['0'..='9']+) {? n.parse().or(Err("i64"))}
 
+        rule boolean() -> bool
+            = "true" { true }
+                / "false" { false }
+
         pub rule literal() -> Literal
             = l:number() { Literal::Int(l) }
+                / b:boolean() { Literal::Bool(b) }
 
         rule _
             = ([' ' | '\t' | '\n'] / ("#" [^'\n']*))*
@@ -41,6 +46,7 @@ peg::parser! {
 
         pub rule type_() -> Type<'a>
             = "int" { Type::Int }
+                / "bool" { Type::Bool }
                 / "unit" { Type::Unit }
                 / "fun" _ "(" _ args:type_() ** ("," _) ")" _ "->" _ ret:type_()
                     { Type::Fun { args: args.into_iter().map(|t| ctx.alloc(t)).collect(), ret: ctx.alloc(ret) } }
@@ -50,9 +56,10 @@ peg::parser! {
 
         pub rule expr() -> Expr<'a>
             = f:fun() { Expr::Fun(f) }
+                / "if" _ cond:expr() _ "then" _ then:expr() _ else_body:("else" _ e:expr() _ { e })? { Expr::If(ctx.alloc(cond), ctx.alloc(then), else_body.map(|e| ctx.alloc(e))) }
+                / lit:literal() { Expr::Literal(lit) }
                 / call:call() { Expr::Call(call) }
                 / bin_op()
-                / lit:literal() { Expr::Literal(lit) }
                 / id:ident() { Expr::Ident(id) }
                 / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
                 / "(" _ e:expr() _ ")" { e }
@@ -319,13 +326,19 @@ mod test {
             args: vec![ctx.arg("b", Type::Int)],
             ret: ctx.ty(Type::Int),
             body: ctx.expr(vec![ctx.expr_stmt(ctx.name("b"))])
-        })]})]));
+        })]})])),
+
+        if_ : "if true then 1 else 2 " => Ok(Expr::If(ctx.expr(make::lit(true)), ctx.expr(1), Some(ctx.expr(2))))
+
+        ;
 
         bin_op(ctx)
         -----------
         add : "1 + 2" => Ok(make::bin_op(&ctx, 1, Op::Add, 2)),
         add_assoc : "1 + 2 + 3" => Ok(make::bin_op(&ctx, ctx.expr(make::bin_op(&ctx, 1, Op::Add, 2)), Op::Add, 3)),
         add_mul_prec : "1 + 2 * 3" => Ok(make::bin_op(&ctx, ctx.expr(1), Op::Add, ctx.expr(make::bin_op(&ctx, 2, Op::Mul, 3))))
+
+
     }
 
     parse_test! {

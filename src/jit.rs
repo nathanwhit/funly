@@ -61,6 +61,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
 }
 
 const INT: Type = types::I64;
+const BOOL: Type = types::B1;
 
 impl<'ty, 'ast> JIT<'ty, 'ast> {
     #[instrument]
@@ -306,6 +307,7 @@ use JITValue::Unit;
 fn ty_to_clif<'a>(ty: TypeRef<'a>) -> JITResult<Type> {
     Ok(match ty {
         crate::ast::Type::Int => INT,
+        crate::ast::Type::Bool => BOOL,
         crate::ast::Type::Fun { .. } => {
             todo!()
         }
@@ -436,6 +438,10 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
                     let imm = *imm;
                     self.builder.ins().iconst(INT, imm)
                 }
+                crate::ast::Literal::Bool(imm) => {
+                    let imm = *imm;
+                    self.builder.ins().bconst(BOOL, imm)
+                }
             },
             crate::ast::Expr::Ident(name) => {
                 let binding = self.ty_ctx.resolve(name)?;
@@ -455,8 +461,70 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
                     crate::ast::Op::Div => self.builder.ins().udiv(lhs, rhs),
                 }
             }
+            crate::ast::Expr::If(cond, then, else_) => {
+                let cond = self.translate_expr(cond)?.as_value();
+
+                return if let Some(else_) = else_ {
+                    self.translate_if_else(cond, then, else_)
+                } else {
+                    self.translate_if(cond, then)
+                };
+                // self.builder.ins().b
+            }
         }
         .into())
+    }
+
+    fn translate_if(&mut self, cond: Value, then: ExprRef<'ast>) -> JITResult<JITValue> {
+        let then_block = self.builder.create_block();
+        let after_block = self.builder.create_block();
+
+        self.builder.ins().brz(cond, after_block, &[]);
+
+        self.builder.ins().jump(then_block, &[]);
+
+        self.builder.switch_to_block(then_block);
+        self.builder.seal_block(then_block);
+
+        self.translate_expr(then)?;
+
+        self.builder.switch_to_block(after_block);
+
+        Ok(JITValue::Unit)
+    }
+
+    fn translate_if_else(
+        &mut self,
+        cond: Value,
+        then: ExprRef<'ast>,
+        else_: ExprRef<'ast>,
+    ) -> JITResult<JITValue> {
+        let then_block = self.builder.create_block();
+        let else_block = self.builder.create_block();
+        let merge_block = self.builder.create_block();
+
+        self.builder.ins().brz(cond, else_block, &[]);
+        self.builder.ins().jump(then_block, &[]);
+
+        let ty = ty_to_clif(self.ty_ctx.type_of(then)?)?;
+        self.builder.append_block_param(merge_block, ty);
+
+        self.builder.seal_block(then_block);
+        self.builder.seal_block(else_block);
+
+        self.builder.switch_to_block(then_block);
+        let then_ret = self.translate_expr(then)?.as_value();
+        self.builder.ins().jump(merge_block, &[then_ret]);
+
+        self.builder.switch_to_block(else_block);
+        let else_ret = self.translate_expr(else_)?.as_value();
+        self.builder.ins().jump(merge_block, &[else_ret]);
+
+        self.builder.seal_block(merge_block);
+
+        self.builder.switch_to_block(merge_block);
+
+        Ok(JITValue::Val(self.builder.block_params(merge_block)[0]))
     }
 
     #[instrument]
@@ -465,13 +533,7 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
         if let Some(_) = self.variables.insert(binding, var) {
             panic!("BAD: already declared {binding}");
         }
-        let ty = match ty {
-            crate::ast::Type::Int => INT,
-            crate::ast::Type::Fun { .. } => {
-                todo!()
-            }
-            crate::ast::Type::Unit => types::B1,
-        };
+        let ty = ty_to_clif(ty).unwrap();
         self.builder.declare_var(var, ty);
         self.var_idx += 1;
         var

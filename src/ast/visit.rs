@@ -69,6 +69,13 @@ pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
             visitor.visit_expr(lhs);
             visitor.visit_expr(rhs);
         }
+        Expr::If(cond, then, else_) => {
+            visitor.visit_expr(cond);
+            visitor.visit_expr(then);
+            if let Some(else_) = else_ {
+                visitor.visit_expr(else_);
+            }
+        }
     }
 }
 

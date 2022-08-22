@@ -55,3 +55,15 @@ fn math_works() {
 
     assert_eq!(div((3, 2)), 1);
 }
+
+#[test]
+fn if_else() {
+    let booly: fn(bool) -> i64 = compile_fun(indoc! {"
+        fun(do_thing: bool) -> int {
+            if do_thing then 1 else 2
+        }
+    "});
+
+    assert_eq!(booly(true), 1);
+    assert_eq!(booly(false), 2);
+}

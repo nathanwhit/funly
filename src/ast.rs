@@ -62,6 +62,7 @@ pub enum Expr<'a> {
     Literal(Literal),
     Ident(Name),
     BinOp(ExprRef<'a>, Op, ExprRef<'a>),
+    If(ExprRef<'a>, ExprRef<'a>, Option<ExprRef<'a>>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -81,6 +82,7 @@ pub struct Call<'a> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum Literal {
     Int(i64),
+    Bool(bool),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -99,6 +101,7 @@ pub struct Arg<'a> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type<'a> {
     Int,
+    Bool,
     Fun {
         args: Vec<TypeRef<'a>>,
         ret: TypeRef<'a>,

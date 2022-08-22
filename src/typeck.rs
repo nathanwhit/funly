@@ -113,12 +113,30 @@ impl<'a> TypeCtx<'a> {
 
                         ret
                     }
-                    Type::Int | Type::Unit => return Err(TypeError::NotCallable(fun_ty)),
+                    Type::Int | Type::Unit | Type::Bool => {
+                        return Err(TypeError::NotCallable(fun_ty))
+                    }
                 }
             }
             crate::ast::Expr::Literal(lit) => match lit {
                 crate::ast::Literal::Int(_) => self.ast.ty(Type::Int),
+                crate::ast::Literal::Bool(_) => self.ast.ty(Type::Bool),
             },
+            crate::ast::Expr::If(cond, then, else_body) => {
+                let cond_ty = self.type_of(cond)?;
+                let then_ty = self.type_of(then)?;
+                let else_body_ty = else_body.map(|b| self.type_of(b)).transpose()?;
+
+                type_eq(cond_ty, &Type::Bool)?;
+
+                if let Some(else_body_ty) = else_body_ty {
+                    type_eq(then_ty, else_body_ty)?;
+                    then_ty
+                } else {
+                    // type_eq(then_ty, &Type::Unit)?;
+                    &Type::Unit
+                }
+            }
             crate::ast::Expr::Ident(name) => self.type_of_name(name)?.ok_or(TypeError::Unknown)?,
             crate::ast::Expr::BinOp(a, _, b) => {
                 let a_ty = self.type_of(a)?;
@@ -152,13 +170,7 @@ fn args_eq<'a>(a: &[TypeRef<'a>], b: &[TypeRef<'a>]) -> Result<(), TypeError<'a>
 
 fn type_eq<'a>(a: TypeRef<'a>, b: TypeRef<'a>) -> Result<(), TypeError<'a>> {
     match (a, b) {
-        (Type::Int, Type::Int) | (Type::Unit, Type::Unit) => Ok(()),
-        (Type::Int, Type::Fun { .. })
-        | (Type::Int, Type::Unit)
-        | (Type::Fun { .. }, Type::Int)
-        | (Type::Fun { .. }, Type::Unit)
-        | (Type::Unit, Type::Int)
-        | (Type::Unit, Type::Fun { .. }) => Err(TypeError::Mismatch(a, b)),
+        (Type::Int, Type::Int) | (Type::Unit, Type::Unit) | (Type::Bool, Type::Bool) => Ok(()),
         (
             Type::Fun { args, ret },
             Type::Fun {
@@ -170,6 +182,7 @@ fn type_eq<'a>(a: TypeRef<'a>, b: TypeRef<'a>) -> Result<(), TypeError<'a>> {
             type_eq(ret, ret_b)?;
             Ok(())
         }
+        (a, b) => Err(TypeError::Mismatch(a, b)),
     }
 }
 
@@ -247,6 +260,20 @@ mod test {
                 id = fun(a: int) -> int { a };
                 id(fun(b: int) -> int { b })
             }" => Err(TypeError::Mismatch(ast.ty(Type::Int), ast.ty(Type::Fun { args: vec![ast.ty(Type::Int)], ret: ast.ty(Type::Int) })))
+        )
+    }
+
+    #[test]
+    fn if_expr() {
+        test_type!(
+            expr(ast) : "if true then 1 else 2" => Ok(&Type::Int)
+        );
+    }
+
+    #[test]
+    fn if_non_bool_cond() {
+        test_type!(
+            expr(ast) : "if 1 then 1 else 2" => Err(TypeError::Mismatch(ast.ty(Type::Int), ast.ty(Type::Bool)))
         )
     }
 }
