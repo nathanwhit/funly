@@ -1,11 +1,13 @@
 use by_address::ByAddress;
 use dashmap::DashMap;
 use thiserror::Error;
+use tracing::instrument;
 
 use crate::{
     ast::{
         context::{ExprRef, StmtRef, TypeRef},
-        AstCtx, Name, Type,
+        visit::{Visit, Visitor},
+        AstCtx, Name, Op, Type,
     },
     resolve::{Binding, ResolutionError, Resolver},
 };
@@ -29,11 +31,11 @@ impl<'a> TypeCtx<'a> {
         }
     }
 
-    pub fn resolve(&self, name: &Name) -> Result<Binding, TypeError> {
+    pub fn resolve(&self, name: &Name) -> Result<Binding, TypeError<'a>> {
         self.resolver.resolve(name).map_err(Into::into)
     }
 
-    pub fn type_of_name(&self, name: &Name) -> Result<Option<TypeRef<'a>>, TypeError> {
+    pub fn type_of_name(&self, name: &Name) -> Result<Option<TypeRef<'a>>, TypeError<'a>> {
         let binding = self.resolver.resolve(name)?;
 
         Ok(self.type_of_binding(binding))
@@ -43,7 +45,8 @@ impl<'a> TypeCtx<'a> {
         self.binding_types.get(&binding).map(|e| *e.value())
     }
 
-    pub fn type_of_stmt(&self, stmt: StmtRef<'a>) -> Result<TypeRef<'a>, TypeError> {
+    #[instrument(skip(self))]
+    pub fn type_of_stmt(&self, stmt: StmtRef<'a>) -> Result<TypeRef<'a>, TypeError<'a>> {
         if let Some(ty) = self.stmt_types.get(&ByAddress(stmt)) {
             return Ok(ty.value());
         }
@@ -79,7 +82,8 @@ impl<'a> TypeCtx<'a> {
         Ok(ty)
     }
 
-    pub fn type_of(&self, expr: ExprRef<'a>) -> Result<TypeRef<'a>, TypeError> {
+    #[instrument(skip(self))]
+    pub fn type_of(&self, expr: ExprRef<'a>) -> Result<TypeRef<'a>, TypeError<'a>> {
         if let Some(ty) = self.expr_types.get(&ByAddress(expr)) {
             return Ok(ty.value());
         }
@@ -95,12 +99,21 @@ impl<'a> TypeCtx<'a> {
                     self.ast.ty(Type::Unit)
                 }
             }
-            crate::ast::Expr::Fun(fun) => self.ast.ty(Type::Fun {
-                args: fun.args.iter().map(|a| a.ty).collect(),
-                ret: fun.ret,
-            }),
+            crate::ast::Expr::Fun(fun) => {
+                for arg in &fun.args {
+                    let binding = self.resolve(&arg.name)?;
+                    println!("REsolive");
+                    self.binding_types.insert(binding, arg.ty);
+                }
+                self.ast.ty(Type::Fun {
+                    args: fun.args.iter().map(|a| a.ty).collect(),
+                    ret: fun.ret,
+                })
+            }
             crate::ast::Expr::Call(call) => {
-                let fun_ty = self.type_of_name(&call.fun)?.ok_or(TypeError::Unknown)?;
+                let fun_ty = self
+                    .type_of_name(&call.fun)?
+                    .ok_or_else(|| TypeError::Unknown(format!("{:?}", call.fun)))?;
 
                 match fun_ty {
                     Type::Fun { args, ret } => {
@@ -127,7 +140,7 @@ impl<'a> TypeCtx<'a> {
                 let then_ty = self.type_of(then)?;
                 let else_body_ty = else_body.map(|b| self.type_of(b)).transpose()?;
 
-                type_eq(cond_ty, &Type::Bool)?;
+                type_eq(&Type::Bool, cond_ty)?;
 
                 if let Some(else_body_ty) = else_body_ty {
                     type_eq(then_ty, else_body_ty)?;
@@ -137,15 +150,29 @@ impl<'a> TypeCtx<'a> {
                     &Type::Unit
                 }
             }
-            crate::ast::Expr::Ident(name) => self.type_of_name(name)?.ok_or(TypeError::Unknown)?,
-            crate::ast::Expr::BinOp(a, _, b) => {
+            crate::ast::Expr::Ident(name) => self
+                .type_of_name(name)?
+                .ok_or(TypeError::Unknown(format!("name {name:?}")))?,
+            crate::ast::Expr::BinOp(a, op, b) => {
                 let a_ty = self.type_of(a)?;
                 let b_ty = self.type_of(b)?;
-                match (a_ty, b_ty) {
-                    (Type::Int, Type::Int) => self.ast.ty(Type::Int),
-                    (Type::Int, b) => return Err(TypeError::Mismatch(a_ty, b)),
-                    (a, Type::Int) => return Err(TypeError::Mismatch(b_ty, a)),
-                    (a, _) => return Err(TypeError::Mismatch(&Type::Int, a)),
+
+                println!("{a_ty:?} , {b_ty:?}");
+                type_eq(a_ty, b_ty)?;
+
+                match op {
+                    Op::Add | Op::Sub | Op::Mul | Op::Div => {
+                        type_eq(&Type::Int, a_ty)?;
+                        &Type::Int
+                    }
+                    Op::Lt | Op::Gt | Op::LtEq | Op::GtEq => {
+                        type_eq(&Type::Int, a_ty)?;
+                        &Type::Bool
+                    }
+                    Op::Eq | Op::NotEq => match a_ty {
+                        Type::Bool | Type::Int => &Type::Bool,
+                        _ => return Err(TypeError::Mismatch(&Type::Int, a_ty)),
+                    },
                 }
             }
         };
@@ -186,16 +213,65 @@ fn type_eq<'a>(a: TypeRef<'a>, b: TypeRef<'a>) -> Result<(), TypeError<'a>> {
     }
 }
 
+pub struct TypeChecker<'a> {
+    ctx: TypeCtx<'a>,
+    errors: Vec<String>,
+}
+
+impl<'a> TypeChecker<'a> {
+    pub fn check<V: Visit<'a> + 'a>(mut self, node: &'a V) -> Result<TypeCtx<'a>, Vec<String>> {
+        node.visit(&mut self);
+
+        let errors = self.errors;
+        if errors.is_empty() {
+            Ok(self.ctx)
+        } else {
+            Err(errors)
+        }
+    }
+
+    pub fn new(ctx: TypeCtx<'a>) -> Self {
+        Self {
+            ctx,
+            errors: Vec::new(),
+        }
+    }
+}
+
+macro_rules! push_err {
+    ($s: ident, $e: expr) => {
+        if let Err(err) = $e {
+            $s.errors.push(err.to_string());
+        }
+    };
+}
+
+impl<'a> Visitor<'a> for TypeChecker<'a> {
+    fn visit_stmt(&mut self, stmt: &'a crate::ast::Stmt<'a>) {
+        push_err!(self, self.ctx.type_of_stmt(stmt));
+        crate::ast::visit::walk_stmt(self, stmt)
+    }
+
+    fn visit_expr(&mut self, expr: &'a crate::ast::Expr) {
+        push_err!(self, self.ctx.type_of(expr));
+        crate::ast::visit::walk_expr(self, expr)
+    }
+
+    fn visit_ident(&mut self, ident: &'a Name) {
+        push_err!(self, self.ctx.type_of_name(ident));
+    }
+}
+
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum TypeError<'a> {
-    #[error("Type mismatch")]
+    #[error("Type mismatch: expected {:?} but found {:?}", .0, .1)]
     Mismatch(TypeRef<'a>, TypeRef<'a>),
 
     #[error("Resolution failure: {0}")]
     Unresolved(#[from] ResolutionError),
 
-    #[error("Unknown")]
-    Unknown,
+    #[error("Unknown {0}")]
+    Unknown(String),
 
     #[error("The type {0:?} is not callable")]
     NotCallable(TypeRef<'a>),
@@ -273,7 +349,7 @@ mod test {
     #[test]
     fn if_non_bool_cond() {
         test_type!(
-            expr(ast) : "if 1 then 1 else 2" => Err(TypeError::Mismatch(ast.ty(Type::Int), ast.ty(Type::Bool)))
+            expr(ast) : "if 1 then 1 else 2" => Err(TypeError::Mismatch(ast.ty(Type::Bool), ast.ty(Type::Int)))
         )
     }
 }

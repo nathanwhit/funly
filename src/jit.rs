@@ -8,8 +8,9 @@ use tracing::instrument;
 
 use crate::{
     ast::{
+        self,
         context::{ExprRef, StmtRef, TypeRef},
-        Call, Fun, Program,
+        Call, Fun, Op, Program,
     },
     resolve::Binding,
     typeck::{TypeCtx, TypeError},
@@ -104,7 +105,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
 
         let mut state = state;
         for (id, fun) in to_build {
-            state = self.compile_fun(id, fun, state)?;
+            state = self.compile_fun(id, fun, state, false)?;
         }
 
         self.module.finalize_definitions();
@@ -126,8 +127,8 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         let func =
             self.module
                 .declare_function("fun", Linkage::Export, &self.ctx.func.signature)?;
-        self.module.clear_signature(&mut self.ctx.func.signature);
-        let _ = self.compile_fun(func, fun, state)?;
+        println!("Declarations {:#?}", self.module.declarations());
+        let _ = self.compile_fun(func, fun, state, true)?;
         self.module.finalize_definitions();
 
         Ok(self.module.get_finalized_function(func))
@@ -139,15 +140,19 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         id: FuncId,
         fun: &'ast Fun<'ast>,
         translation_state: TranslationState<'ast>,
+        signature_ready: bool,
     ) -> JITResult<TranslationState<'ast>> {
         let Fun { args, ret, body } = fun;
 
-        for arg in args {
-            let arg_ty = ty_to_clif(arg.ty)?;
-            self.ctx.func.signature.params.push(AbiParam::new(arg_ty));
+        if !signature_ready {
+            for arg in args {
+                let arg_ty = ty_to_clif(arg.ty)?;
+                self.ctx.func.signature.params.push(AbiParam::new(arg_ty));
+            }
+            let ret_ty = ty_to_clif(ret)?;
+            self.ctx.func.signature.returns.push(AbiParam::new(ret_ty));
         }
-        let ret_ty = ty_to_clif(ret)?;
-        self.ctx.func.signature.returns.push(AbiParam::new(ret_ty));
+        println!("Starting off with {:?}", self.ctx.func);
 
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.fn_ctx);
 
@@ -158,6 +163,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         builder.append_block_params_for_function_params(entry_block);
 
         builder.seal_block(entry_block);
+        println!("sealed block {entry_block:?}");
 
         let params = builder.block_params(entry_block).to_vec();
         let mut translator =
@@ -178,15 +184,19 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
 
         println!("Fun = {:?}", translator.builder.func);
 
+        println!("finalizing");
         let (to_build, state) = translator.finish();
+        self.module.define_function(id, &mut self.ctx)?;
+        self.module.clear_context(&mut self.ctx);
+        println!("Declarations {:#?}", self.module.declarations());
 
         let mut state = state;
         for (id, fun) in to_build {
-            state = self.compile_fun(id, fun, state)?;
+            state = self.compile_fun(id, fun, state, false)?;
         }
 
-        self.module.define_function(id, &mut self.ctx)?;
-        self.module.clear_context(&mut self.ctx);
+        // self.module.define_function(id, &mut self.ctx)?;
+        // self.module.clear_context(&mut self.ctx);
 
         Ok(state)
     }
@@ -452,13 +462,26 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
                 self.builder.use_var(var)
             }
             crate::ast::Expr::BinOp(lhs, op, rhs) => {
+                let ty = self.ty_ctx.type_of(lhs)?;
                 let lhs = self.translate_expr(lhs)?.as_value();
                 let rhs = self.translate_expr(rhs)?.as_value();
+                let (lhs, rhs) = match ty {
+                    ast::Type::Bool => (
+                        self.builder.ins().bint(INT, lhs),
+                        self.builder.ins().bint(INT, rhs),
+                    ),
+                    ast::Type::Int => (lhs, rhs),
+                    _ => unreachable!(),
+                };
                 match op {
-                    crate::ast::Op::Add => self.builder.ins().iadd(lhs, rhs),
-                    crate::ast::Op::Sub => self.builder.ins().isub(lhs, rhs),
-                    crate::ast::Op::Mul => self.builder.ins().imul(lhs, rhs),
-                    crate::ast::Op::Div => self.builder.ins().udiv(lhs, rhs),
+                    Op::Add => self.builder.ins().iadd(lhs, rhs),
+                    Op::Sub => self.builder.ins().isub(lhs, rhs),
+                    Op::Mul => self.builder.ins().imul(lhs, rhs),
+                    Op::Div => self.builder.ins().udiv(lhs, rhs),
+                    op => {
+                        let cc = self.op_to_cc(op);
+                        self.builder.ins().icmp(cc, lhs, rhs)
+                    }
                 }
             }
             crate::ast::Expr::If(cond, then, else_) => {
@@ -475,6 +498,18 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
         .into())
     }
 
+    fn op_to_cc(&self, op: &Op) -> IntCC {
+        match op {
+            Op::Eq => IntCC::Equal,
+            Op::NotEq => IntCC::NotEqual,
+            Op::Lt => IntCC::SignedLessThan,
+            Op::Gt => IntCC::SignedGreaterThan,
+            Op::LtEq => IntCC::SignedLessThanOrEqual,
+            Op::GtEq => IntCC::SignedGreaterThanOrEqual,
+            _ => panic!("bad"),
+        }
+    }
+
     fn translate_if(&mut self, cond: Value, then: ExprRef<'ast>) -> JITResult<JITValue> {
         let then_block = self.builder.create_block();
         let after_block = self.builder.create_block();
@@ -489,6 +524,7 @@ impl<'m, 'ty, 'ast> Translator<'m, 'ty, 'ast> {
         self.translate_expr(then)?;
 
         self.builder.switch_to_block(after_block);
+        self.builder.seal_block(after_block);
 
         Ok(JITValue::Unit)
     }

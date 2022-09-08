@@ -3,7 +3,7 @@ use duplicate::duplicate_item;
 use super::{Arg, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 pub trait Visitor<'ast>: Sized {
-    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt<'ast>) {
         walk_stmt(self, stmt)
     }
 

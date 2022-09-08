@@ -1,0 +1,1 @@
+fun(a: int) -> int { a };

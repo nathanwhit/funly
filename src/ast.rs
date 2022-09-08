@@ -71,6 +71,12 @@ pub enum Op {
     Sub,
     Mul,
     Div,
+    Eq,
+    NotEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

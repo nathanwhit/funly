@@ -1,6 +1,8 @@
 use chumsky::prelude::*;
 
-use crate::ast::{Arg, AstCtx, Call, Expr, Fun, Literal, Name, Op, Program, Stmt, Type};
+use crate::ast::make;
+use crate::ast::Op::*;
+use crate::ast::{Arg, AstCtx, Call, Expr, Fun, Literal, Name, Program, Stmt, Type};
 
 macro_rules! parser {
     ($t: ty) => {
@@ -54,27 +56,40 @@ peg::parser! {
         pub rule arg() -> Arg<'a>
             = name:ident() _ ":" _ ty:type_() { Arg { name, ty: ctx.alloc(ty) } }
 
-        pub rule expr() -> Expr<'a>
+        rule non_binop_expr_1() -> Expr<'a>
             = f:fun() { Expr::Fun(f) }
-                / "if" _ cond:expr() _ "then" _ then:expr() _ else_body:("else" _ e:expr() _ { e })? { Expr::If(ctx.alloc(cond), ctx.alloc(then), else_body.map(|e| ctx.alloc(e))) }
-                / lit:literal() { Expr::Literal(lit) }
-                / call:call() { Expr::Call(call) }
-                / bin_op()
-                / id:ident() { Expr::Ident(id) }
-                / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
-                / "(" _ e:expr() _ ")" { e }
+            / "if" _ cond:expr() _ "then" _ then:expr() _ else_body:("else" _ e:expr() _ { e })? { Expr::If(ctx.alloc(cond), ctx.alloc(then), else_body.map(|e| ctx.alloc(e))) }
+
+        rule non_binop_expr_2() -> Expr<'a>
+            = lit:literal() { Expr::Literal(lit) }
+            / call:call() { Expr::Call(call) }
+            / id:ident() { Expr::Ident(id) }
+            / "{" _ stmts:stmt()* _ "}" { Expr::Block(stmts.into_iter().map(|s| ctx.alloc(s)).collect()) }
+            / "(" _ e:expr() _ ")" { e }
+
+        pub rule expr() -> Expr<'a>
+            = e:non_binop_expr_1() { e }
+                / e:bin_op() { e }
+                / e:non_binop_expr_2() { e }
 
         pub rule bin_op() -> Expr<'a>
             = precedence! {
-                a:(@) _ "+" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Add, ctx.expr(b)) }
-                a:(@) _ "-" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Sub, ctx.expr(b)) }
+                a:(@) _ "!=" _ b:@ { make::bin_op(ctx, a, NotEq, b) }
+                a:(@) _ "==" _ b:@ { make::bin_op(ctx, a, Eq, b) }
                 --
-                a:(@) _ "*" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Mul, ctx.expr(b)) }
-                a:(@) _ "/" _ b:@ { Expr::BinOp(ctx.expr(a), Op::Div, ctx.expr(b)) }
+                a:(@) _ "<" _ b:@ {make::bin_op(ctx, a, Lt, b) }
+                a:(@) _ ">" _ b:@ { make::bin_op(ctx, a, Gt, b) }
+                a:(@) _ ">=" _ b:@ { make::bin_op(ctx, a, GtEq, b) }
+                a:(@) _ "<=" _ b:@ { make::bin_op(ctx, a, LtEq, b) }
                 --
-                n:number() { Expr::Literal(Literal::Int(n)) }
-                id:ident() { Expr::Ident(id) }
-                "(" _ e:bin_op() _ ")" { e }
+                a:(@) _ "+" _ b:@ { make::bin_op(ctx, a, Add, b) }
+                a:(@) _ "-" _ b:@ { make::bin_op(ctx, a, Sub, b) }
+                --
+                a:(@) _ "*" _ b:@ { make::bin_op(ctx, a, Mul, b) }
+                a:(@) _ "/" _ b:@ { make::bin_op(ctx, a, Div, b) }
+                --
+                e:non_binop_expr_1() { e }
+                e:non_binop_expr_2() { e }
             }
 
         pub rule fun() -> Fun<'a>
@@ -109,6 +124,7 @@ peg::parser! {
 #[cfg(test)]
 mod test {
     use crate::ast::make::{self, exprs};
+    use crate::ast::Op;
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -328,15 +344,26 @@ mod test {
             body: ctx.expr(vec![ctx.expr_stmt(ctx.name("b"))])
         })]})])),
 
-        if_ : "if true then 1 else 2 " => Ok(Expr::If(ctx.expr(make::lit(true)), ctx.expr(1), Some(ctx.expr(2))))
+        if_ : "if true then 1 else 2 " => Ok(Expr::If(ctx.expr(make::lit(true)), ctx.expr(1), Some(ctx.expr(2)))),
 
+        nested_if : "if true then 1 else {
+            if true then 2 else 3
+        }" => Ok(Expr::If(ctx.expr(make::lit(true)), ctx.expr(1), Some(ctx.expr(vec![ctx.expr_stmt((ctx.expr(make::lit(true)), ctx.expr(2), Some(ctx.expr(3))))]))))
         ;
 
         bin_op(ctx)
         -----------
         add : "1 + 2" => Ok(make::bin_op(&ctx, 1, Op::Add, 2)),
         add_assoc : "1 + 2 + 3" => Ok(make::bin_op(&ctx, ctx.expr(make::bin_op(&ctx, 1, Op::Add, 2)), Op::Add, 3)),
-        add_mul_prec : "1 + 2 * 3" => Ok(make::bin_op(&ctx, ctx.expr(1), Op::Add, ctx.expr(make::bin_op(&ctx, 2, Op::Mul, 3))))
+        add_mul_prec : "1 + 2 * 3" => Ok(make::bin_op(&ctx, ctx.expr(1), Op::Add, ctx.expr(make::bin_op(&ctx, 2, Op::Mul, 3)))),
+        add_call : "fib(1) + fib(2)" => Ok(make::bin_op(&ctx, ctx.expr(Call {
+            fun: ctx.name("fib"),
+            args: vec![ctx.expr(1)]
+        }), Op::Add, ctx.expr(Call {
+            fun: ctx.name("fib"),
+            args: vec![ctx.expr(2)]
+        })))
+
 
 
     }

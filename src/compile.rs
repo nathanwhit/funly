@@ -54,8 +54,16 @@ fn compile_code<'a>(input: &'a str) -> Result<*const u8, CompileError> {
 
 #[cfg(test)]
 fn compile_standalone_fun<'a>(source: &'a str) -> Result<*const u8, CompileError> {
+    use crate::typeck::TypeChecker;
+
     let ast = AstCtx::new();
-    let fun = parser::standalone_fun(source, &ast).unwrap();
+    let fun = match parser::standalone_fun(source, &ast) {
+        Ok(fun) => fun,
+        Err(e) => {
+            panic!("{e:?} : {}", &source[e.location.offset..])
+        }
+    };
+    println!("{fun:?}");
     let resolver = Resolver::new(&fun);
     let mut validator = AstValidator::new(&resolver);
 
@@ -66,7 +74,9 @@ fn compile_standalone_fun<'a>(source: &'a str) -> Result<*const u8, CompileError
         return Err(CompileError::ValidationError);
     }
 
+    let f = ast.expr(fun.clone());
     let ty = TypeCtx::new(&ast, &resolver);
+    let ty = TypeChecker::new(ty).check(f).unwrap();
 
     let mut jit = JIT::new(&ty)?;
 
