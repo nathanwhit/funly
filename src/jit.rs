@@ -4,7 +4,7 @@ use cranelift::{codegen::ir::FuncRef, prelude::*};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, FuncId, Linkage, Module, ModuleError};
 use thiserror::Error;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use crate::{
     ast::{
@@ -127,7 +127,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         let func =
             self.module
                 .declare_function("fun", Linkage::Export, &self.ctx.func.signature)?;
-        println!("Declarations {:#?}", self.module.declarations());
+        debug!("Declarations {:#?}", self.module.declarations());
         let _ = self.compile_fun(func, fun, state, true)?;
         self.module.finalize_definitions();
 
@@ -152,7 +152,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
             let ret_ty = ty_to_clif(ret)?;
             self.ctx.func.signature.returns.push(AbiParam::new(ret_ty));
         }
-        println!("Starting off with {:?}", self.ctx.func);
+        debug!("Starting off with {:?}", self.ctx.func);
 
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.fn_ctx);
 
@@ -163,7 +163,7 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
         builder.append_block_params_for_function_params(entry_block);
 
         builder.seal_block(entry_block);
-        println!("sealed block {entry_block:?}");
+        debug!("sealed block {entry_block:?}");
 
         let params = builder.block_params(entry_block).to_vec();
         let mut translator =
@@ -182,13 +182,13 @@ impl<'ty, 'ast> JIT<'ty, 'ast> {
             Unit => translator.builder.ins().return_(&[]),
         };
 
-        println!("Fun = {:?}", translator.builder.func);
+        debug!("Fun = {:?}", translator.builder.func);
 
-        println!("finalizing");
+        debug!("finalizing");
         let (to_build, state) = translator.finish();
         self.module.define_function(id, &mut self.ctx)?;
         self.module.clear_context(&mut self.ctx);
-        println!("Declarations {:#?}", self.module.declarations());
+        debug!("Declarations {:#?}", self.module.declarations());
 
         let mut state = state;
         for (id, fun) in to_build {

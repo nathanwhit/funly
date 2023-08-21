@@ -102,7 +102,6 @@ impl<'a> TypeCtx<'a> {
             crate::ast::Expr::Fun(fun) => {
                 for arg in &fun.args {
                     let binding = self.resolve(&arg.name)?;
-                    println!("REsolive");
                     self.binding_types.insert(binding, arg.ty);
                 }
                 self.ast.ty(Type::Fun {
@@ -157,7 +156,7 @@ impl<'a> TypeCtx<'a> {
                 let a_ty = self.type_of(a)?;
                 let b_ty = self.type_of(b)?;
 
-                println!("{a_ty:?} , {b_ty:?}");
+                tracing::debug!("{a_ty:?} , {b_ty:?}");
                 type_eq(a_ty, b_ty)?;
 
                 match op {
